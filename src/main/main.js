@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 
 let mainWindow;
@@ -258,12 +259,14 @@ async function buildWorkspaceTree(targetDir, depth = 0, maxDepth = 4) {
 }
 
 function createWindow() {
+  const appIconPath = path.join(workspaceRoot, 'build/icon.png');
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 760,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#f4f5f7',
+    ...(fsSync.existsSync(appIconPath) ? { icon: appIconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

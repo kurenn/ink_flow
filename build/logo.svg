@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#122235"/>
+      <stop offset="1" stop-color="#1E3A5A"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="266" y1="244" x2="758" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8FE3D4"/>
+      <stop offset="1" stop-color="#5AB6E8"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#bg)"/>
+  <rect x="308" y="206" width="408" height="612" rx="56" fill="#F6F9FC"/>
+  <rect x="362" y="294" width="300" height="24" rx="12" fill="#DCE6F3"/>
+  <rect x="362" y="352" width="258" height="20" rx="10" fill="#DCE6F3"/>
+  <rect x="362" y="404" width="284" height="20" rx="10" fill="#DCE6F3"/>
+  <path d="M461 684L579 350L619 350L499 684H461Z" fill="url(#ink)"/>
+  <path d="M570 616C608.66 616 640 647.34 640 686C640 724.66 608.66 756 570 756C531.34 756 500 724.66 500 686C500 647.34 531.34 616 570 616Z" fill="url(#ink)"/>
+</svg>

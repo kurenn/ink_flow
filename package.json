@@ -10,11 +10,12 @@
   "homepage": "https://example.com/inkflow",
   "license": "MIT",
   "scripts": {
+    "icons:build": "bash scripts/generate-icons.sh",
     "start": "electron .",
     "dev": "electron .",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux AppImage deb"
+    "dist": "npm run icons:build && electron-builder",
+    "dist:mac": "npm run icons:build && electron-builder --mac",
+    "dist:linux": "npm run icons:build && electron-builder --linux AppImage deb"
   },
   "dependencies": {
     "marked": "^15.0.12",
@@ -27,6 +28,7 @@
   "build": {
     "appId": "com.inkflow.app",
     "productName": "Inkflow",
+    "icon": "build/icon.png",
     "files": [
       "src/**/*",
       "package.json"
@@ -35,12 +37,14 @@
       "buildResources": "build"
     },
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg"
       ],
       "category": "public.app-category.productivity"
     },
     "linux": {
+      "icon": "build/icon-512.png",
       "target": [
         "AppImage",
         "deb"
