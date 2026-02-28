@@ -37,6 +37,7 @@ let isDirty = false;
 let isRendering = false;
 let themeMode = 'light';
 const ZWSP = '\u200B';
+const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
 const MOON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 
@@ -132,13 +133,35 @@ function findCurrentBlockElement() {
     return null;
   }
 
-  const node = selection.getRangeAt(0).startContainer;
+  const range = selection.getRangeAt(0);
+  const node = range.startContainer;
   const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  const block = element?.closest('p, div, li, h1, h2, h3, h4, h5, h6, blockquote');
-  if (block === editor) {
-    return null;
+  const directBlock = element?.closest(BLOCK_SELECTOR);
+  if (directBlock && directBlock !== editor) {
+    return directBlock;
   }
-  return block;
+
+  // When caret lands on the root editor node, resolve only the block at caret position.
+  if (node === editor || element === editor) {
+    const container = editor;
+    const offset = range.startOffset;
+    const atOffset = container.childNodes[offset] || null;
+    const beforeOffset = offset > 0 ? container.childNodes[offset - 1] : null;
+    const candidate = atOffset || beforeOffset;
+    const candidateElement = candidate?.nodeType === Node.TEXT_NODE ? candidate.parentElement : candidate;
+    if (candidateElement && candidateElement !== editor && candidateElement.matches?.(BLOCK_SELECTOR)) {
+      return candidateElement;
+    }
+
+    if (container.childNodes.length === 0 || container.childElementCount === 0) {
+      const paragraph = document.createElement('p');
+      paragraph.innerHTML = '<br>';
+      container.appendChild(paragraph);
+      return paragraph;
+    }
+  }
+
+  return null;
 }
 
 function replaceBlockPreservingCaret(block, nextElement) {
@@ -187,7 +210,7 @@ function applyBlockShortcuts() {
     return false;
   }
 
-  const text = (block.textContent || '').trim();
+  const text = (block.textContent || '').replace(/\u200B/g, '').trim();
   if (!text) {
     return false;
   }
@@ -208,7 +231,7 @@ function applyBlockShortcuts() {
     }
   }
 
-  const headingMatch = text.match(/^(#{1,6})\s*(\S.*)$/);
+  const headingMatch = text.match(/^(#{1,6})\s*([^\s#].*)$/);
   if (headingMatch) {
     const level = headingMatch[1].length;
     const heading = document.createElement(`h${level}`);
@@ -347,19 +370,9 @@ async function doOpen() {
 }
 
 async function doNewFile() {
-  if (!fileApi) {
-    return;
-  }
-
-  const result = await fileApi.createWorkspaceFile('untitled.md');
-  if (!result?.filePath) {
-    return;
-  }
-
-  currentFilePath = result.filePath;
-  setContent(result.content || '');
-  await loadWorkspaceTree();
-  highlightActiveFile(currentFilePath);
+  currentFilePath = '';
+  setContent('');
+  highlightActiveFile('');
   placeCaretAtEnd(editor);
 }
 

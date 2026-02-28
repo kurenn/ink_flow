@@ -330,7 +330,7 @@ button.primary {
   outline: none;
   max-width: 900px;
   margin: 0 auto;
-  padding: 0;
+  padding: 22px 0 0;
   font-family: var(--content-font);
   font-size: 1.06rem;
   line-height: 1.62;
@@ -499,6 +499,6 @@ body[data-theme='dark'] .editor-surface a {
   }
 
   .editor-surface {
-    padding: 0;
+    padding: 16px 0 0;
   }
 }
