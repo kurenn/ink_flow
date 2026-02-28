@@ -35,8 +35,10 @@ let currentFilePath = '';
 let currentMarkdown = '';
 let isDirty = false;
 let isRendering = false;
-let themeMode = 'system';
+let themeMode = 'light';
 const ZWSP = '\u200B';
+const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
+const MOON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 
 function getFileName(filePath) {
   if (!filePath) {
@@ -403,29 +405,24 @@ async function doSaveAs() {
 
 function toggleSidebar() {
   workspace.classList.toggle('sidebar-hidden');
+  syncSidebarButtonState();
+}
+
+function syncSidebarButtonState() {
   const hidden = workspace.classList.contains('sidebar-hidden');
-  sidebarButton.textContent = hidden ? 'Files' : 'Hide Files';
+  sidebarButton.setAttribute('aria-pressed', String(!hidden));
+  sidebarButton.setAttribute('title', hidden ? 'Show file sidebar (Cmd/Ctrl+Shift+B)' : 'Hide file sidebar (Cmd/Ctrl+Shift+B)');
 }
 
 function applyTheme() {
-  if (themeMode === 'system') {
-    document.body.removeAttribute('data-theme');
-    themeButton.textContent = 'Theme: System';
-    return;
-  }
-
   document.body.setAttribute('data-theme', themeMode);
-  themeButton.textContent = themeMode === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+  themeButton.innerHTML = themeMode === 'dark' ? MOON_ICON : SUN_ICON;
+  themeButton.setAttribute('aria-label', themeMode === 'dark' ? 'Theme: Dark' : 'Theme: Light');
+  themeButton.setAttribute('title', `${themeMode === 'dark' ? 'Theme: Dark' : 'Theme: Light'} (Cmd/Ctrl+Shift+L)`);
 }
 
 function cycleTheme() {
-  if (themeMode === 'system') {
-    themeMode = 'light';
-  } else if (themeMode === 'light') {
-    themeMode = 'dark';
-  } else {
-    themeMode = 'system';
-  }
+  themeMode = themeMode === 'dark' ? 'light' : 'dark';
 
   localStorage.setItem('typoralite-theme', themeMode);
   applyTheme();
@@ -581,6 +578,11 @@ window.addEventListener('beforeunload', (event) => {
 setContent('# Welcome to TyporaLite\n\nStart writing markdown here.');
 loadWorkspaceTree();
 
-themeMode = localStorage.getItem('typoralite-theme') || 'system';
+const savedTheme = localStorage.getItem('typoralite-theme');
+if (savedTheme === 'dark' || savedTheme === 'light') {
+  themeMode = savedTheme;
+} else {
+  themeMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 applyTheme();
-sidebarButton.textContent = workspace.classList.contains('sidebar-hidden') ? 'Files' : 'Hide Files';
+syncSidebarButtonState();

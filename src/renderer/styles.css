@@ -158,6 +158,25 @@ button.primary {
   font-size: 1rem;
 }
 
+.icon-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .title-wrap {
   display: flex;
   flex-direction: column;
