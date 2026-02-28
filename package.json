@@ -1,0 +1,51 @@
+{
+  "name": "typora-lite",
+  "version": "0.1.0",
+  "description": "A simple and clean Markdown editor for macOS and Linux",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "TyporaLite Team",
+    "email": "maintainer@example.com"
+  },
+  "homepage": "https://example.com/typora-lite",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux AppImage deb"
+  },
+  "dependencies": {
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "electron": "^36.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.typoralite.app",
+    "productName": "TyporaLite",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "TyporaLite Team <maintainer@example.com>",
+      "category": "Office"
+    }
+  }
+}

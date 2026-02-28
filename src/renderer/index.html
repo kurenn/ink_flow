@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TyporaLite</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="title-wrap">
+          <h1>TyporaLite</h1>
+          <p id="file-meta">Untitled</p>
+        </div>
+
+        <div class="actions" role="toolbar" aria-label="Editor actions">
+          <button id="open-btn" type="button">Open</button>
+          <button id="save-btn" type="button">Save</button>
+          <button id="save-as-btn" type="button">Save As</button>
+          <button id="preview-btn" type="button" class="ghost">Hide Preview</button>
+        </div>
+      </header>
+
+      <main id="workspace" class="workspace show-preview">
+        <section class="panel editor-panel">
+          <label class="sr-only" for="markdown-input">Markdown editor</label>
+          <textarea id="markdown-input" spellcheck="true" placeholder="# Welcome\n\nStart writing markdown..."></textarea>
+        </section>
+
+        <section class="panel preview-panel" aria-label="Rendered preview">
+          <article id="markdown-preview"></article>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js" type="module"></script>
+  </body>
+</html>
