@@ -10,27 +10,36 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="title-wrap">
-          <h1>TyporaLite</h1>
-          <p id="file-meta">Untitled</p>
-        </div>
-
         <div class="actions" role="toolbar" aria-label="Editor actions">
+          <button id="sidebar-btn" type="button" class="ghost" title="Toggle file sidebar (Cmd/Ctrl+Shift+B)">Files</button>
+          <button id="new-btn" type="button" title="New file (Cmd/Ctrl+N)">+</button>
           <button id="open-btn" type="button">Open</button>
           <button id="save-btn" type="button">Save</button>
           <button id="save-as-btn" type="button">Save As</button>
-          <button id="preview-btn" type="button" class="ghost">Hide Preview</button>
+        </div>
+
+        <div class="title-wrap">
+          <h1 id="doc-name">Untitled</h1>
+          <p id="file-meta">Untitled</p>
+        </div>
+
+        <div class="window-actions">
+          <button id="theme-btn" type="button" class="ghost" title="Toggle light/dark">Theme</button>
         </div>
       </header>
 
-      <main id="workspace" class="workspace show-preview">
-        <section class="panel editor-panel">
-          <label class="sr-only" for="markdown-input">Markdown editor</label>
-          <textarea id="markdown-input" spellcheck="true" placeholder="# Welcome\n\nStart writing markdown..."></textarea>
-        </section>
+      <main id="workspace" class="workspace">
+        <aside id="sidebar" class="sidebar panel">
+          <header class="sidebar-header">
+            <h2>Files</h2>
+            <p id="workspace-meta"></p>
+          </header>
+          <div id="file-tree" class="file-tree"></div>
+        </aside>
 
-        <section class="panel preview-panel" aria-label="Rendered preview">
-          <article id="markdown-preview"></article>
+        <section class="panel editor-panel">
+          <label class="sr-only" for="editor-surface">Markdown editor</label>
+          <div id="editor-surface" class="editor-surface" contenteditable="true" spellcheck="true" data-placeholder="Start writing markdown..."></div>
         </section>
       </main>
     </div>

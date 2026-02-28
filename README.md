@@ -4,14 +4,18 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 
 ## Features
 
-- Fast Markdown editing with instant preview
-- Open, Save, and Save As support
-- Clean split-layout interface
-- Preview panel toggle (`Cmd/Ctrl + \\`)
+- Typora-like single-pane live markdown rendering
+- New, Open, Save, and Save As support
+- Left workspace tree for markdown files
+- Sidebar toggle (`Cmd/Ctrl + Shift + B`)
+- Light/Dark/System theme toggle (`Cmd/Ctrl + Shift + L`)
 - Keyboard shortcuts:
+  - `Cmd/Ctrl + N` new file
   - `Cmd/Ctrl + O` open
   - `Cmd/Ctrl + S` save
   - `Cmd/Ctrl + Shift + S` save as
+  - `Cmd/Ctrl + Shift + B` toggle file sidebar
+  - `Cmd/Ctrl + Shift + L` cycle theme
 
 ## Requirements
 

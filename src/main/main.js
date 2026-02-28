@@ -3,6 +3,82 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 let mainWindow;
+const workspaceRoot = process.cwd();
+
+function shouldIgnorePath(name) {
+  return name.startsWith('.') || name === 'node_modules' || name === 'dist';
+}
+
+function isMarkdownFile(name) {
+  return /\.(md|markdown|mdown|mkd|txt)$/i.test(name);
+}
+
+function isInsideWorkspace(targetPath) {
+  const relative = path.relative(workspaceRoot, targetPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function createWorkspaceFileDialog(suggestedName = 'untitled.md') {
+  if (!mainWindow) {
+    return null;
+  }
+
+  const suggestedPath = path.join(workspaceRoot, suggestedName);
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: suggestedPath,
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  });
+
+  if (canceled || !filePath || !isInsideWorkspace(filePath)) {
+    return null;
+  }
+
+  await fs.writeFile(filePath, '', 'utf8');
+  return { filePath, content: '' };
+}
+
+async function buildWorkspaceTree(targetDir, depth = 0, maxDepth = 4) {
+  const entries = await fs.readdir(targetDir, { withFileTypes: true });
+  const nodes = [];
+
+  for (const entry of entries) {
+    if (shouldIgnorePath(entry.name)) {
+      continue;
+    }
+
+    const absolutePath = path.join(targetDir, entry.name);
+
+    if (entry.isDirectory()) {
+      const children = depth < maxDepth ? await buildWorkspaceTree(absolutePath, depth + 1, maxDepth) : [];
+      if (children.length > 0) {
+        nodes.push({
+          type: 'directory',
+          name: entry.name,
+          path: absolutePath,
+          children,
+        });
+      }
+      continue;
+    }
+
+    if (entry.isFile() && isMarkdownFile(entry.name)) {
+      nodes.push({
+        type: 'file',
+        name: entry.name,
+        path: absolutePath,
+      });
+    }
+  }
+
+  nodes.sort((a, b) => {
+    if (a.type === b.type) {
+      return a.name.localeCompare(b.name);
+    }
+    return a.type === 'directory' ? -1 : 1;
+  });
+
+  return nodes;
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -33,6 +109,11 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'New File',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow.webContents.send('menu:new-file'),
+        },
         {
           label: 'Open',
           accelerator: 'CmdOrCtrl+O',
@@ -73,9 +154,9 @@ function buildMenu() {
       label: 'View',
       submenu: [
         {
-          label: 'Toggle Preview',
-          accelerator: 'CmdOrCtrl+\\',
-          click: () => mainWindow.webContents.send('menu:toggle-preview'),
+          label: 'Toggle Sidebar',
+          accelerator: 'CmdOrCtrl+Shift+B',
+          click: () => mainWindow.webContents.send('menu:toggle-sidebar'),
         },
         { type: 'separator' },
         { role: 'reload' },
@@ -148,6 +229,33 @@ ipcMain.handle('file:save-as', async (_, payload) => {
 
   await fs.writeFile(filePath, payload?.content ?? '', 'utf8');
   return { filePath };
+});
+
+ipcMain.handle('workspace:get-tree', async () => {
+  const children = await buildWorkspaceTree(workspaceRoot);
+  return {
+    type: 'directory',
+    name: path.basename(workspaceRoot) || workspaceRoot,
+    path: workspaceRoot,
+    children,
+  };
+});
+
+ipcMain.handle('workspace:open-file', async (_, payload) => {
+  if (!payload?.filePath || !isInsideWorkspace(payload.filePath)) {
+    return null;
+  }
+
+  const content = await fs.readFile(payload.filePath, 'utf8');
+  return {
+    filePath: payload.filePath,
+    content,
+  };
+});
+
+ipcMain.handle('workspace:create-file', async (_, payload) => {
+  const suggestedName = payload?.suggestedName || 'untitled.md';
+  return createWorkspaceFileDialog(suggestedName);
 });
 
 app.whenReady().then(() => {
