@@ -2,6 +2,7 @@ import { marked } from '../../node_modules/marked/lib/marked.esm.js';
 import TurndownService from '../../node_modules/turndown/lib/turndown.es.js';
 
 const editor = document.getElementById('editor-surface');
+const editorPanel = document.querySelector('.editor-panel');
 const docName = document.getElementById('doc-name');
 const fileMeta = document.getElementById('file-meta');
 const workspace = document.getElementById('workspace');
@@ -29,6 +30,15 @@ turndownService.addRule('task-checkbox', {
   replacement: (_, node) => (node.checked ? '[x] ' : '[ ] '),
 });
 
+turndownService.addRule('img-markdown-path', {
+  filter: 'img',
+  replacement: (_, node) => {
+    const alt = node.getAttribute('alt') || '';
+    const src = node.getAttribute('data-md-src') || node.getAttribute('src') || '';
+    return `![${alt}](${src})`;
+  },
+});
+
 marked.setOptions({
   gfm: true,
   breaks: true,
@@ -40,6 +50,7 @@ let isDirty = false;
 let isRendering = false;
 let themeMode = 'light';
 let searchDebounceTimer = null;
+let workspaceRootPath = '';
 const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
@@ -95,12 +106,156 @@ function insertHtmlAtCaret(html) {
   }
 }
 
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function dirnameLike(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  const idx = normalized.lastIndexOf('/');
+  if (idx <= 0) {
+    return '';
+  }
+  return normalized.slice(0, idx);
+}
+
+function toFileUrl(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(normalized)) {
+    return `file:///${encodeURI(normalized)}`;
+  }
+  if (normalized.startsWith('/')) {
+    return `file://${encodeURI(normalized)}`;
+  }
+  return `file://${encodeURI(normalized)}`;
+}
+
+function isWindowsAbsolutePath(filePath) {
+  return /^[a-zA-Z]:[\\/]/.test(String(filePath || ''));
+}
+
+function isLikelyAbsoluteUrl(value) {
+  return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(String(value || '')) || String(value || '').startsWith('//');
+}
+
+function resolvePathLike(baseDir, targetPath) {
+  const cleanBase = String(baseDir || '').replace(/\\/g, '/');
+  const cleanTarget = String(targetPath || '').replace(/\\/g, '/');
+  const stack = [];
+  const combined = `${cleanBase}/${cleanTarget}`;
+  const absoluteUnix = combined.startsWith('/');
+
+  for (const segment of combined.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      if (stack.length === 0) {
+        continue;
+      }
+      if (/^[a-zA-Z]:$/.test(stack[stack.length - 1])) {
+        continue;
+      }
+      stack.pop();
+      continue;
+    }
+
+    stack.push(segment);
+  }
+
+  const joined = stack.join('/');
+  if (/^[a-zA-Z]:/.test(joined)) {
+    return joined;
+  }
+
+  return `${absoluteUnix ? '/' : ''}${joined}`;
+}
+
+function resolveRelativeImageSources() {
+  const baseDir = currentFilePath ? dirnameLike(currentFilePath) : workspaceRootPath;
+  if (!baseDir) {
+    return;
+  }
+
+  const images = editor.querySelectorAll('img');
+  for (const img of images) {
+    const rawSrc = img.getAttribute('data-md-src') || img.getAttribute('src') || '';
+    if (!rawSrc) {
+      continue;
+    }
+
+    if (!img.getAttribute('data-md-src')) {
+      img.setAttribute('data-md-src', rawSrc);
+    }
+
+    if (rawSrc.startsWith('data:') || rawSrc.startsWith('blob:') || rawSrc.startsWith('file://')) {
+      img.setAttribute('src', rawSrc);
+      continue;
+    }
+
+    if (isWindowsAbsolutePath(rawSrc) || rawSrc.startsWith('/')) {
+      img.setAttribute('src', toFileUrl(rawSrc));
+      continue;
+    }
+
+    if (isLikelyAbsoluteUrl(rawSrc)) {
+      img.setAttribute('src', rawSrc);
+      continue;
+    }
+
+    const absolutePath = resolvePathLike(baseDir, rawSrc);
+    if (!absolutePath) {
+      continue;
+    }
+    img.setAttribute('src', toFileUrl(absolutePath));
+  }
+}
+
 function normalizeMarkdown(markdown) {
   return (markdown || '').replace(/\r\n/g, '\n').replace(/\u200B/g, '').trimEnd();
 }
 
 function coerceLooseHeadingSyntax(markdown) {
   return markdown.replace(/^(\s{0,3}#{1,6})([^\s#].*)$/gm, '$1 $2');
+}
+
+function getImageAltText(fileName) {
+  return pathLikeStem(fileName || 'image');
+}
+
+function pathLikeStem(fileName) {
+  return String(fileName || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || 'image';
+}
+
+function inferImageFileName(file) {
+  const rawName = String(file?.name || '').trim();
+  if (/\.[a-z0-9]+$/i.test(rawName)) {
+    return rawName;
+  }
+
+  const byType = {
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'image/bmp': '.bmp',
+    'image/avif': '.avif',
+  };
+
+  const normalizedType = String(file?.type || '').toLowerCase();
+  const ext = byType[normalizedType] || '.png';
+  return `image${ext}`;
 }
 
 function slugifyHeading(text) {
@@ -333,12 +488,43 @@ function renderMarkdownIntoEditor(markdown, keepCaretAtEnd = false) {
   const canonicalMarkdown = coerceLooseHeadingSyntax(markdown || '');
   const html = marked.parse(canonicalMarkdown);
   editor.innerHTML = html || '';
+  resolveRelativeImageSources();
   wireTaskCheckboxes();
   updateOutline();
   if (keepCaretAtEnd) {
     placeCaretAtEnd(editor);
   }
   isRendering = false;
+}
+
+function insertMarkdownAtCaret(markdownSnippet) {
+  const canonicalMarkdown = coerceLooseHeadingSyntax(markdownSnippet || '');
+  const html = marked.parse(canonicalMarkdown);
+  insertHtmlAtCaret(html);
+  resolveRelativeImageSources();
+  wireTaskCheckboxes();
+  updateDirtyState();
+  updateOutline();
+}
+
+function isImageLikeFile(file) {
+  if (!file) {
+    return false;
+  }
+
+  return file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name || '');
+}
+
+function hasFilePayload(dataTransfer) {
+  if (!dataTransfer) {
+    return false;
+  }
+
+  if (Array.from(dataTransfer.files || []).some((file) => isImageLikeFile(file))) {
+    return true;
+  }
+
+  return Array.from(dataTransfer.items || []).some((item) => item.kind === 'file');
 }
 
 function updateFileMeta() {
@@ -746,6 +932,7 @@ async function loadWorkspaceTree() {
     return;
   }
 
+  workspaceRootPath = tree.path || '';
   workspaceMeta.textContent = tree.path;
   fileTree.innerHTML = '';
 
@@ -777,6 +964,58 @@ editor.addEventListener('paste', (event) => {
   wireTaskCheckboxes();
   updateDirtyState();
   updateOutline();
+});
+
+editorPanel?.addEventListener('dragover', (event) => {
+  if (!hasFilePayload(event.dataTransfer)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+  editorPanel?.classList.add('drop-active');
+});
+
+editorPanel?.addEventListener('dragleave', (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    editorPanel?.classList.remove('drop-active');
+  }
+});
+
+editorPanel?.addEventListener('drop', async (event) => {
+  const files = Array.from(event.dataTransfer?.files || []);
+  const imageFiles = files.filter((file) => isImageLikeFile(file));
+  if (imageFiles.length === 0) {
+    editorPanel?.classList.remove('drop-active');
+    return;
+  }
+
+  event.preventDefault();
+  editorPanel?.classList.remove('drop-active');
+  editor.focus();
+
+  for (const imageFile of imageFiles) {
+    try {
+      const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
+      const fileName = inferImageFileName(imageFile);
+      const imported = await fileApi?.importWorkspaceImageData(bytes, fileName, currentFilePath);
+      if (!imported?.markdownPath) {
+        continue;
+      }
+
+      const alt = escapeHtml(getImageAltText(imported.fileName));
+      const markdownPath = escapeHtml(imported.markdownPath);
+      const src = escapeHtml(toFileUrl(imported.filePath || ''));
+      const imageHtml = `<p><img src="${src}" data-md-src="${markdownPath}" alt="${alt}"></p><p><br></p>`;
+      insertHtmlAtCaret(imageHtml);
+      wireTaskCheckboxes();
+      updateDirtyState();
+      updateOutline();
+    } catch (error) {
+      // Ignore a failed import for one file and continue with other drops.
+      console.error('Failed to import dropped image:', error);
+    }
+  }
 });
 
 editor.addEventListener('keydown', (event) => {

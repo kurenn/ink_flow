@@ -463,6 +463,12 @@ button.primary {
 .editor-panel {
   overflow: auto;
   background: var(--editor-bg);
+  transition: box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.editor-panel.drop-active {
+  box-shadow: inset 0 0 0 2px #3b82f6;
+  background: color-mix(in srgb, var(--editor-bg) 92%, #3b82f6 8%);
 }
 
 .editor-surface {

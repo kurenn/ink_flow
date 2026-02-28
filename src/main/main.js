@@ -13,9 +13,98 @@ function isMarkdownFile(name) {
   return /\.(md|markdown|mdown|mkd|txt)$/i.test(name);
 }
 
+function isImageFile(name) {
+  return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(name);
+}
+
 function isInsideWorkspace(targetPath) {
   const relative = path.relative(workspaceRoot, targetPath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function toPosixPath(filePath) {
+  return filePath.split(path.sep).join('/');
+}
+
+async function getImageImportDestination(sourceName, activeFilePath) {
+  if (!sourceName || !isImageFile(sourceName)) {
+    return null;
+  }
+
+  const hasActiveFile = activeFilePath && isInsideWorkspace(activeFilePath);
+  const anchorDir = hasActiveFile ? path.dirname(activeFilePath) : workspaceRoot;
+  const assetsDir = path.join(anchorDir, 'assets');
+  await fs.mkdir(assetsDir, { recursive: true });
+
+  const ext = path.extname(sourceName);
+  const rawStem = path.basename(sourceName, ext);
+  const safeStem = rawStem.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'image';
+
+  let candidateName = `${safeStem}${ext.toLowerCase()}`;
+  let candidatePath = path.join(assetsDir, candidateName);
+  let counter = 1;
+  while (await fileExists(candidatePath)) {
+    candidateName = `${safeStem}-${counter}${ext.toLowerCase()}`;
+    candidatePath = path.join(assetsDir, candidateName);
+    counter += 1;
+  }
+
+  return { candidateName, candidatePath };
+}
+
+function buildImportedImageResult(candidatePath, candidateName, activeFilePath) {
+  const markdownPath = activeFilePath && isInsideWorkspace(activeFilePath)
+    ? path.relative(path.dirname(activeFilePath), candidatePath)
+    : path.relative(workspaceRoot, candidatePath);
+
+  return {
+    filePath: candidatePath,
+    fileName: candidateName,
+    markdownPath: toPosixPath(markdownPath),
+  };
+}
+
+async function importWorkspaceImage(sourcePath, activeFilePath) {
+  if (!sourcePath || typeof sourcePath !== 'string') {
+    return null;
+  }
+
+  const sourceName = path.basename(sourcePath);
+  const destination = await getImageImportDestination(sourceName, activeFilePath);
+  if (!destination) {
+    return null;
+  }
+
+  await fs.copyFile(sourcePath, destination.candidatePath);
+  return buildImportedImageResult(destination.candidatePath, destination.candidateName, activeFilePath);
+}
+
+async function importWorkspaceImageData(bytes, fileName, activeFilePath) {
+  const sourceName = typeof fileName === 'string' ? fileName : '';
+  const destination = await getImageImportDestination(sourceName, activeFilePath);
+  if (!destination || !bytes) {
+    return null;
+  }
+
+  const contentBuffer = Buffer.isBuffer(bytes)
+    ? bytes
+    : Array.isArray(bytes)
+      ? Buffer.from(bytes)
+    : ArrayBuffer.isView(bytes)
+      ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      : Buffer.from(bytes);
+
+  await fs.writeFile(destination.candidatePath, contentBuffer);
+  return buildImportedImageResult(destination.candidatePath, destination.candidateName, activeFilePath);
 }
 
 async function collectMarkdownFiles(targetDir, files = []) {
@@ -354,6 +443,14 @@ ipcMain.handle('workspace:create-file', async (_, payload) => {
 
 ipcMain.handle('workspace:search', async (_, payload) => {
   return searchWorkspaceMarkdown(payload?.query);
+});
+
+ipcMain.handle('workspace:import-image', async (_, payload) => {
+  return importWorkspaceImage(payload?.sourcePath, payload?.activeFilePath);
+});
+
+ipcMain.handle('workspace:import-image-data', async (_, payload) => {
+  return importWorkspaceImageData(payload?.bytes, payload?.fileName, payload?.activeFilePath);
 });
 
 app.whenReady().then(() => {
