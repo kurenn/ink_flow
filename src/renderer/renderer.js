@@ -36,6 +36,7 @@ let currentMarkdown = '';
 let isDirty = false;
 let isRendering = false;
 let themeMode = 'system';
+const ZWSP = '\u200B';
 
 function getFileName(filePath) {
   if (!filePath) {
@@ -55,8 +56,17 @@ function placeCaretAtEnd(target) {
   selection.addRange(range);
 }
 
+function placeCaretInTextNode(node, offset = node.textContent.length) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 function normalizeMarkdown(markdown) {
-  return (markdown || '').replace(/\r\n/g, '\n').trimEnd();
+  return (markdown || '').replace(/\r\n/g, '\n').replace(/\u200B/g, '').trimEnd();
 }
 
 function coerceLooseHeadingSyntax(markdown) {
@@ -122,7 +132,11 @@ function findCurrentBlockElement() {
 
   const node = selection.getRangeAt(0).startContainer;
   const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  return element?.closest('p, div, li, h1, h2, h3, h4, h5, h6, blockquote');
+  const block = element?.closest('p, div, li, h1, h2, h3, h4, h5, h6, blockquote');
+  if (block === editor) {
+    return null;
+  }
+  return block;
 }
 
 function replaceBlockPreservingCaret(block, nextElement) {
@@ -140,13 +154,13 @@ function applyInlineShortcuts(block) {
     return false;
   }
 
-  const source = block.textContent || '';
+  const source = (block.textContent || '').replace(/\u200B/g, '');
   if (!source.trim()) {
     return false;
   }
 
   // Inline markdown patterns that should render in-place while typing.
-  const hasInlineMarkdown = /(\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|~~[^~]+~~|`[^`]+`|\*\*[^*]+\*\*|_[^_]+_)/.test(source);
+  const hasInlineMarkdown = /(\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|~~[^~]+~~|`[^`]+`|\*\*[^*\n]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))/.test(source);
   if (!hasInlineMarkdown) {
     return false;
   }
@@ -157,7 +171,11 @@ function applyInlineShortcuts(block) {
   }
 
   block.innerHTML = renderedInline;
-  placeCaretAtEnd(block);
+
+  // Keep typing outside formatted spans by inserting a plain-text caret anchor.
+  const tailAnchor = document.createTextNode(ZWSP);
+  block.appendChild(tailAnchor);
+  placeCaretInTextNode(tailAnchor, 1);
   return true;
 }
 

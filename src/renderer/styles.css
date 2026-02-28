@@ -14,6 +14,7 @@
   --code-bg: #f1f1ef;
   --quote-line: #d4d7dd;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --content-font: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,6 +53,7 @@ body[data-theme='light'] {
   --code-bg: #f1f1ef;
   --quote-line: #d4d7dd;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --content-font: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 }
 
 body[data-theme='dark'] {
@@ -70,6 +72,7 @@ body[data-theme='dark'] {
   --code-bg: #252a31;
   --quote-line: #3b414a;
   --shadow: none;
+  --content-font: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 }
 
 * {
@@ -309,8 +312,10 @@ button.primary {
   max-width: 900px;
   margin: 0 auto;
   padding: 0;
-  font-size: 1rem;
-  line-height: 1.7;
+  font-family: var(--content-font);
+  font-size: 1.06rem;
+  line-height: 1.62;
+  letter-spacing: 0.003em;
   color: var(--text);
 }
 
@@ -332,17 +337,20 @@ button.primary {
 
 .editor-surface h1 {
   margin-top: 0;
-  font-size: 2.35rem;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 0.4rem;
+  font-size: 3rem;
+  font-weight: 500;
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .editor-surface h2 {
-  font-size: 1.72rem;
+  font-size: 2.2rem;
+  font-weight: 500;
 }
 
 .editor-surface h3 {
-  font-size: 1.32rem;
+  font-size: 1.7rem;
+  font-weight: 500;
 }
 
 .editor-surface p,
@@ -357,6 +365,10 @@ button.primary {
 .editor-surface ul,
 .editor-surface ol {
   padding-left: 1.3rem;
+}
+
+.editor-surface ul {
+  list-style-type: square;
 }
 
 .editor-surface li {
