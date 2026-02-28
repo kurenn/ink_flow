@@ -7,6 +7,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Typora-like single-pane live markdown rendering
 - New, Open, Save, and Save As support
 - Left workspace tree for markdown files
+- Live outline panel for document headings
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark theme toggle (`Cmd/Ctrl + Shift + L`)
 - Live block shortcuts:

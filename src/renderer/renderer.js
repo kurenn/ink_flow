@@ -6,6 +6,7 @@ const docName = document.getElementById('doc-name');
 const fileMeta = document.getElementById('file-meta');
 const workspace = document.getElementById('workspace');
 const fileTree = document.getElementById('file-tree');
+const outlineTree = document.getElementById('outline-tree');
 const workspaceMeta = document.getElementById('workspace-meta');
 const sidebarButton = document.getElementById('sidebar-btn');
 const themeButton = document.getElementById('theme-btn');
@@ -68,12 +69,94 @@ function placeCaretInTextNode(node, offset = node.textContent.length) {
   selection.addRange(range);
 }
 
+function insertHtmlAtCaret(html) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    editor.insertAdjacentHTML('beforeend', html);
+    placeCaretAtEnd(editor);
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const fragment = range.createContextualFragment(html);
+  const lastNode = fragment.lastChild;
+  range.insertNode(fragment);
+
+  if (lastNode) {
+    const after = document.createRange();
+    after.setStartAfter(lastNode);
+    after.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(after);
+  }
+}
+
 function normalizeMarkdown(markdown) {
   return (markdown || '').replace(/\r\n/g, '\n').replace(/\u200B/g, '').trimEnd();
 }
 
 function coerceLooseHeadingSyntax(markdown) {
   return markdown.replace(/^(\s{0,3}#{1,6})([^\s#].*)$/gm, '$1 $2');
+}
+
+function slugifyHeading(text) {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-') || 'section';
+}
+
+function updateOutline() {
+  if (!outlineTree) {
+    return;
+  }
+
+  const headings = Array.from(editor.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+  outlineTree.innerHTML = '';
+
+  if (headings.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'outline-empty';
+    empty.textContent = 'No headings yet';
+    outlineTree.appendChild(empty);
+    return;
+  }
+
+  const usedSlugs = new Map();
+
+  for (const heading of headings) {
+    const text = (heading.textContent || '').trim();
+    if (!text) {
+      continue;
+    }
+
+    const level = Number.parseInt(heading.tagName.slice(1), 10);
+    const baseSlug = slugifyHeading(text);
+    const count = (usedSlugs.get(baseSlug) || 0) + 1;
+    usedSlugs.set(baseSlug, count);
+    const id = count === 1 ? `inkflow-${baseSlug}` : `inkflow-${baseSlug}-${count}`;
+    heading.id = id;
+
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'outline-item';
+    item.dataset.level = String(level);
+    item.textContent = text;
+    item.title = text;
+    item.addEventListener('click', () => {
+      const target = document.getElementById(id);
+      if (!target) {
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      placeCaretAtEnd(target);
+    });
+
+    outlineTree.appendChild(item);
+  }
 }
 
 function getMarkdownFromEditor() {
@@ -99,6 +182,7 @@ function renderMarkdownIntoEditor(markdown, keepCaretAtEnd = false) {
   const html = marked.parse(canonicalMarkdown);
   editor.innerHTML = html || '';
   wireTaskCheckboxes();
+  updateOutline();
   if (keepCaretAtEnd) {
     placeCaretAtEnd(editor);
   }
@@ -227,6 +311,7 @@ function applyBlockShortcuts() {
       block.appendChild(document.createTextNode(` ${inlineTaskMatch[2]}`));
       wireTaskCheckboxes();
       placeCaretAtEnd(block);
+      updateOutline();
       return true;
     }
   }
@@ -238,6 +323,7 @@ function applyBlockShortcuts() {
     heading.textContent = headingMatch[2];
     block.replaceWith(heading);
     placeCaretAtEnd(heading);
+    updateOutline();
     return true;
   }
 
@@ -254,6 +340,7 @@ function applyBlockShortcuts() {
     ul.appendChild(li);
     replaceBlockPreservingCaret(block, ul);
     wireTaskCheckboxes();
+    updateOutline();
     return true;
   }
 
@@ -267,6 +354,7 @@ function applyBlockShortcuts() {
     li.textContent = unorderedMatch[1];
     ul.appendChild(li);
     replaceBlockPreservingCaret(block, ul);
+    updateOutline();
     return true;
   }
 
@@ -281,6 +369,7 @@ function applyBlockShortcuts() {
     li.textContent = orderedMatch[2];
     ol.appendChild(li);
     replaceBlockPreservingCaret(block, ol);
+    updateOutline();
     return true;
   }
 
@@ -291,6 +380,7 @@ function applyBlockShortcuts() {
     p.textContent = quoteMatch[1];
     quote.appendChild(p);
     replaceBlockPreservingCaret(block, quote);
+    updateOutline();
     return true;
   }
 
@@ -303,6 +393,7 @@ function applyBlockShortcuts() {
     fragment.append(hr, p);
     block.replaceWith(fragment);
     placeCaretAtEnd(p);
+    updateOutline();
     return true;
   }
 
@@ -316,6 +407,7 @@ function applyBlockShortcuts() {
     }
     pre.appendChild(code);
     replaceBlockPreservingCaret(block, pre);
+    updateOutline();
     return true;
   }
 
@@ -343,11 +435,13 @@ function applyBlockShortcuts() {
       tbody.appendChild(bodyRow);
       table.appendChild(tbody);
       replaceBlockPreservingCaret(block, table);
+      updateOutline();
       return true;
     }
   }
 
   if (applyInlineShortcuts(block)) {
+    updateOutline();
     return true;
   }
 
@@ -515,6 +609,22 @@ editor.addEventListener('input', () => {
 
   applyBlockShortcuts();
   updateDirtyState();
+  updateOutline();
+});
+
+editor.addEventListener('paste', (event) => {
+  const pastedText = event.clipboardData?.getData('text/plain') || '';
+  if (!pastedText) {
+    return;
+  }
+
+  event.preventDefault();
+  const canonicalMarkdown = coerceLooseHeadingSyntax(pastedText);
+  const parsedHtml = marked.parse(canonicalMarkdown);
+  insertHtmlAtCaret(parsedHtml);
+  wireTaskCheckboxes();
+  updateDirtyState();
+  updateOutline();
 });
 
 editor.addEventListener('keydown', (event) => {

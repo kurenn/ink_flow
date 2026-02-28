@@ -237,6 +237,14 @@ button.primary {
   border-right: 1px solid var(--line);
 }
 
+.sidebar-section {
+  padding: 8px 6px;
+}
+
+.outline-section {
+  border-top: 1px solid var(--line);
+}
+
 .sidebar-header h2 {
   margin: 2px 6px 4px;
   font-size: 0.77rem;
@@ -250,6 +258,47 @@ button.primary {
   font-size: 0.72rem;
   color: var(--muted);
   word-break: break-all;
+}
+
+.outline-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+}
+
+.outline-item {
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  height: 26px;
+  padding: 0 6px;
+  padding-left: calc(6px + (var(--outline-level, 1) - 1) * 10px);
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-item[data-level='1'] { --outline-level: 1; }
+.outline-item[data-level='2'] { --outline-level: 2; }
+.outline-item[data-level='3'] { --outline-level: 3; }
+.outline-item[data-level='4'] { --outline-level: 4; }
+.outline-item[data-level='5'] { --outline-level: 5; }
+.outline-item[data-level='6'] { --outline-level: 6; }
+
+.outline-item:hover {
+  background: var(--active-bg);
+}
+
+.outline-empty {
+  margin: 2px 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .file-tree {
