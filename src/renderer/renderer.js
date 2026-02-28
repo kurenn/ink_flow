@@ -5,6 +5,8 @@ const editor = document.getElementById('editor-surface');
 const docName = document.getElementById('doc-name');
 const fileMeta = document.getElementById('file-meta');
 const workspace = document.getElementById('workspace');
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
 const fileTree = document.getElementById('file-tree');
 const outlineTree = document.getElementById('outline-tree');
 const workspaceMeta = document.getElementById('workspace-meta');
@@ -37,6 +39,7 @@ let currentMarkdown = '';
 let isDirty = false;
 let isRendering = false;
 let themeMode = 'light';
+let searchDebounceTimer = null;
 const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
@@ -107,6 +110,155 @@ function slugifyHeading(text) {
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-') || 'section';
+}
+
+function focusSearchInput() {
+  if (workspace.classList.contains('sidebar-hidden')) {
+    toggleSidebar();
+  }
+
+  if (!searchInput) {
+    return;
+  }
+
+  searchInput.focus();
+  searchInput.select();
+}
+
+function jumpToNthMatch(query, ordinal = 0) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) {
+    return;
+  }
+
+  let seen = 0;
+  let firstMatchRange = null;
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+
+  while (textNode) {
+    const source = (textNode.textContent || '').replace(/\u200B/g, '');
+    const lower = source.toLowerCase();
+    let from = 0;
+
+    while (from <= lower.length) {
+      const start = lower.indexOf(normalizedQuery, from);
+      if (start === -1) {
+        break;
+      }
+
+      const range = document.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, start + normalizedQuery.length);
+
+      if (!firstMatchRange) {
+        firstMatchRange = range.cloneRange();
+      }
+
+      if (seen === ordinal) {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        range.startContainer.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      seen += 1;
+      from = start + Math.max(1, normalizedQuery.length);
+    }
+
+    textNode = walker.nextNode();
+  }
+
+  if (firstMatchRange) {
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(firstMatchRange);
+    firstMatchRange.startContainer.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+async function openSearchResult(filePath, query, ordinal) {
+  if (!fileApi) {
+    return;
+  }
+
+  const result = await fileApi.openWorkspaceFile(filePath);
+  if (!result) {
+    return;
+  }
+
+  currentFilePath = result.filePath;
+  setContent(result.content);
+  highlightActiveFile(currentFilePath);
+
+  requestAnimationFrame(() => {
+    jumpToNthMatch(query, ordinal);
+  });
+}
+
+function renderSearchResults(query, groupedResults) {
+  if (!searchResults) {
+    return;
+  }
+
+  searchResults.innerHTML = '';
+  const cleanQuery = String(query || '').trim();
+
+  if (!cleanQuery) {
+    return;
+  }
+
+  if (!groupedResults || groupedResults.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'search-empty';
+    empty.textContent = 'No matches';
+    searchResults.appendChild(empty);
+    return;
+  }
+
+  for (const fileResult of groupedResults) {
+    const details = document.createElement('details');
+    details.open = groupedResults.length <= 4;
+    details.className = 'search-group';
+
+    const summary = document.createElement('summary');
+    summary.textContent = `${fileResult.relativePath} (${fileResult.matches.length})`;
+    details.appendChild(summary);
+
+    const list = document.createElement('div');
+    list.className = 'search-group-list';
+
+    for (const match of fileResult.matches) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'search-result-item';
+      item.innerHTML = `<span class="search-result-line">L${match.line}</span><span class="search-result-text">${match.preview}</span>`;
+      item.title = `${fileResult.relativePath}:${match.line}`;
+      item.addEventListener('click', () => {
+        openSearchResult(fileResult.filePath, cleanQuery, match.ordinal);
+      });
+      list.appendChild(item);
+    }
+
+    details.appendChild(list);
+    searchResults.appendChild(details);
+  }
+}
+
+async function runWorkspaceSearch(query) {
+  if (!fileApi || !searchInput || !searchResults) {
+    return;
+  }
+
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) {
+    searchResults.innerHTML = '';
+    return;
+  }
+
+  const groupedResults = await fileApi.searchWorkspace(cleanQuery);
+  renderSearchResults(cleanQuery, groupedResults);
 }
 
 function updateOutline() {
@@ -643,7 +795,24 @@ editor.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') {
     event.preventDefault();
     cycleTheme();
+    return;
   }
+
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    focusSearchInput();
+  }
+});
+
+searchInput?.addEventListener('input', (event) => {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+
+  const query = event.target.value;
+  searchDebounceTimer = setTimeout(() => {
+    runWorkspaceSearch(query);
+  }, 140);
 });
 
 sidebarButton.addEventListener('click', toggleSidebar);
@@ -686,6 +855,10 @@ if (!fileApi) {
 
   fileApi.onToggleSidebarFromMenu(() => {
     toggleSidebar();
+  });
+
+  fileApi.onFocusSearchFromMenu(() => {
+    focusSearchInput();
   });
 }
 

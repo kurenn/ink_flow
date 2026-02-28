@@ -7,9 +7,11 @@ contextBridge.exposeInMainWorld('fileApi', {
   getWorkspaceTree: () => ipcRenderer.invoke('workspace:get-tree'),
   openWorkspaceFile: (filePath) => ipcRenderer.invoke('workspace:open-file', { filePath }),
   createWorkspaceFile: (suggestedName) => ipcRenderer.invoke('workspace:create-file', { suggestedName }),
+  searchWorkspace: (query) => ipcRenderer.invoke('workspace:search', { query }),
   onNewFileFromMenu: (callback) => ipcRenderer.on('menu:new-file', callback),
   onOpenFileFromMenu: (callback) => ipcRenderer.on('menu:open-file', (_, payload) => callback(payload)),
   onSaveFileFromMenu: (callback) => ipcRenderer.on('menu:save-file', callback),
   onSaveAsFromMenu: (callback) => ipcRenderer.on('menu:save-file-as', callback),
   onToggleSidebarFromMenu: (callback) => ipcRenderer.on('menu:toggle-sidebar', callback),
+  onFocusSearchFromMenu: (callback) => ipcRenderer.on('menu:focus-search', callback),
 });

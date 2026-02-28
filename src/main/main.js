@@ -18,6 +18,94 @@ function isInsideWorkspace(targetPath) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+async function collectMarkdownFiles(targetDir, files = []) {
+  const entries = await fs.readdir(targetDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (shouldIgnorePath(entry.name)) {
+      continue;
+    }
+
+    const absolutePath = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await collectMarkdownFiles(absolutePath, files);
+      continue;
+    }
+
+    if (entry.isFile() && isMarkdownFile(entry.name)) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files;
+}
+
+async function searchWorkspaceMarkdown(rawQuery) {
+  const query = String(rawQuery || '').trim();
+  if (!query) {
+    return [];
+  }
+
+  const lowerQuery = query.toLowerCase();
+  const files = await collectMarkdownFiles(workspaceRoot);
+  const groupedResults = [];
+  let totalMatches = 0;
+  const maxMatches = 300;
+
+  for (const filePath of files) {
+    if (totalMatches >= maxMatches) {
+      break;
+    }
+
+    const content = await fs.readFile(filePath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    const matches = [];
+    let fileMatchOrdinal = 0;
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
+      const lowerLine = line.toLowerCase();
+      let from = 0;
+
+      while (from <= lowerLine.length) {
+        const start = lowerLine.indexOf(lowerQuery, from);
+        if (start === -1) {
+          break;
+        }
+
+        matches.push({
+          line: lineIndex + 1,
+          column: start + 1,
+          ordinal: fileMatchOrdinal,
+          preview: line.trim() || '(empty line)',
+        });
+
+        fileMatchOrdinal += 1;
+        totalMatches += 1;
+        from = start + Math.max(1, query.length);
+
+        if (totalMatches >= maxMatches) {
+          break;
+        }
+      }
+
+      if (totalMatches >= maxMatches) {
+        break;
+      }
+    }
+
+    if (matches.length > 0) {
+      groupedResults.push({
+        filePath,
+        relativePath: path.relative(workspaceRoot, filePath) || path.basename(filePath),
+        matches,
+      });
+    }
+  }
+
+  return groupedResults;
+}
+
 async function createWorkspaceFileDialog(suggestedName = 'untitled.md') {
   if (!mainWindow) {
     return null;
@@ -148,6 +236,12 @@ function buildMenu() {
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find in Workspace',
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => mainWindow.webContents.send('menu:focus-search'),
+        },
       ],
     },
     {
@@ -256,6 +350,10 @@ ipcMain.handle('workspace:open-file', async (_, payload) => {
 ipcMain.handle('workspace:create-file', async (_, payload) => {
   const suggestedName = payload?.suggestedName || 'untitled.md';
   return createWorkspaceFileDialog(suggestedName);
+});
+
+ipcMain.handle('workspace:search', async (_, payload) => {
+  return searchWorkspaceMarkdown(payload?.query);
 });
 
 app.whenReady().then(() => {

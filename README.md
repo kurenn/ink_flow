@@ -8,6 +8,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - New, Open, Save, and Save As support
 - Left workspace tree for markdown files
 - Live outline panel for document headings
+- Workspace search with result navigation
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark theme toggle (`Cmd/Ctrl + Shift + L`)
 - Live block shortcuts:
@@ -32,6 +33,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
   - `Cmd/Ctrl + Shift + S` save as
   - `Cmd/Ctrl + Shift + B` toggle file sidebar
   - `Cmd/Ctrl + Shift + L` toggle light/dark theme
+  - `Cmd/Ctrl + Shift + F` focus workspace search
 
 ## Requirements
 
