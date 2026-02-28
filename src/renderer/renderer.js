@@ -110,7 +110,7 @@ function updateFileMeta() {
   const suffix = isDirty ? ' (unsaved)' : '';
   docName.textContent = fileName;
   fileMeta.textContent = currentFilePath ? `${currentFilePath}${suffix}` : `Untitled${suffix}`;
-  document.title = `${fileName}${suffix} - TyporaLite`;
+  document.title = `${fileName}${suffix} - Inkflow`;
   saveButton.classList.toggle('primary', isDirty);
 }
 
@@ -437,7 +437,7 @@ function applyTheme() {
 function cycleTheme() {
   themeMode = themeMode === 'dark' ? 'light' : 'dark';
 
-  localStorage.setItem('typoralite-theme', themeMode);
+  localStorage.setItem('inkflow-theme', themeMode);
   applyTheme();
 }
 
@@ -588,10 +588,10 @@ window.addEventListener('beforeunload', (event) => {
   event.returnValue = false;
 });
 
-setContent('# Welcome to TyporaLite\n\nStart writing markdown here.');
+setContent('# Welcome to Inkflow\n\nStart writing markdown here.');
 loadWorkspaceTree();
 
-const savedTheme = localStorage.getItem('typoralite-theme');
+const savedTheme = localStorage.getItem('inkflow-theme') || localStorage.getItem('typoralite-theme');
 if (savedTheme === 'dark' || savedTheme === 'light') {
   themeMode = savedTheme;
 } else {

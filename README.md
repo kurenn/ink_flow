@@ -1,4 +1,4 @@
-# TyporaLite
+# Inkflow
 
 A simple and clean desktop Markdown editor for macOS and Linux.
 

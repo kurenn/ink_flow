@@ -1,4 +1,4 @@
-# TyporaLite Markdown Support Demo
+# Inkflow Markdown Support Demo
 
 This file exercises all currently supported Markdown features in the app.
 
@@ -78,7 +78,7 @@ function greet(name) {
   return `Hello, ${name}`;
 }
 
-console.log(greet('TyporaLite'));
+console.log(greet('Inkflow'));
 ```
 
 ```python
@@ -117,4 +117,3 @@ ___
 ## Quick Table Starter Line (for live shortcut)
 
 | Name | Role |
-

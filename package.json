@@ -1,13 +1,13 @@
 {
-  "name": "typora-lite",
+  "name": "inkflow",
   "version": "0.1.0",
   "description": "A simple and clean Markdown editor for macOS and Linux",
   "main": "src/main/main.js",
   "author": {
-    "name": "TyporaLite Team",
+    "name": "Inkflow Team",
     "email": "maintainer@example.com"
   },
-  "homepage": "https://example.com/typora-lite",
+  "homepage": "https://example.com/inkflow",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -25,8 +25,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.typoralite.app",
-    "productName": "TyporaLite",
+    "appId": "com.inkflow.app",
+    "productName": "Inkflow",
     "files": [
       "src/**/*",
       "package.json"
@@ -45,7 +45,7 @@
         "AppImage",
         "deb"
       ],
-      "maintainer": "TyporaLite Team <maintainer@example.com>",
+      "maintainer": "Inkflow Team <maintainer@example.com>",
       "category": "Office"
     }
   }
