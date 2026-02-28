@@ -21,6 +21,11 @@ const turndownService = new TurndownService({
   bulletListMarker: '-',
 });
 
+turndownService.addRule('task-checkbox', {
+  filter: (node) => node.nodeName === 'INPUT' && node.getAttribute('type') === 'checkbox',
+  replacement: (_, node) => (node.checked ? '[x] ' : '[ ] '),
+});
+
 marked.setOptions({
   gfm: true,
   breaks: true,
@@ -64,11 +69,23 @@ function getMarkdownFromEditor() {
   return normalizeMarkdown(markdown);
 }
 
+function wireTaskCheckboxes() {
+  const checkboxes = editor.querySelectorAll('input[type="checkbox"]');
+  for (const checkbox of checkboxes) {
+    checkbox.removeAttribute('disabled');
+    checkbox.setAttribute('contenteditable', 'false');
+    checkbox.onchange = () => {
+      updateDirtyState();
+    };
+  }
+}
+
 function renderMarkdownIntoEditor(markdown, keepCaretAtEnd = false) {
   isRendering = true;
   const canonicalMarkdown = coerceLooseHeadingSyntax(markdown || '');
   const html = marked.parse(canonicalMarkdown);
   editor.innerHTML = html || '';
+  wireTaskCheckboxes();
   if (keepCaretAtEnd) {
     placeCaretAtEnd(editor);
   }
@@ -105,7 +122,43 @@ function findCurrentBlockElement() {
 
   const node = selection.getRangeAt(0).startContainer;
   const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  return element?.closest('p, div, h1, h2, h3, h4, h5, h6');
+  return element?.closest('p, div, li, h1, h2, h3, h4, h5, h6, blockquote');
+}
+
+function replaceBlockPreservingCaret(block, nextElement) {
+  block.replaceWith(nextElement);
+  const caretTarget = nextElement.matches('li, p, h1, h2, h3, h4, h5, h6') ? nextElement : nextElement.querySelector('li, p, code') || nextElement;
+  placeCaretAtEnd(caretTarget);
+}
+
+function applyInlineShortcuts(block) {
+  if (!(block instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (block.closest('pre')) {
+    return false;
+  }
+
+  const source = block.textContent || '';
+  if (!source.trim()) {
+    return false;
+  }
+
+  // Inline markdown patterns that should render in-place while typing.
+  const hasInlineMarkdown = /(\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|~~[^~]+~~|`[^`]+`|\*\*[^*]+\*\*|_[^_]+_)/.test(source);
+  if (!hasInlineMarkdown) {
+    return false;
+  }
+
+  const renderedInline = marked.parseInline(source).trim();
+  if (!renderedInline) {
+    return false;
+  }
+
+  block.innerHTML = renderedInline;
+  placeCaretAtEnd(block);
+  return true;
 }
 
 function applyBlockShortcuts() {
@@ -119,6 +172,22 @@ function applyBlockShortcuts() {
     return false;
   }
 
+  if (block.tagName === 'LI') {
+    const inlineTaskMatch = text.match(/^\[( |x|X)\]\s+(.+)$/);
+    if (inlineTaskMatch) {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = inlineTaskMatch[1].toLowerCase() === 'x';
+      checkbox.setAttribute('contenteditable', 'false');
+      block.innerHTML = '';
+      block.appendChild(checkbox);
+      block.appendChild(document.createTextNode(` ${inlineTaskMatch[2]}`));
+      wireTaskCheckboxes();
+      placeCaretAtEnd(block);
+      return true;
+    }
+  }
+
   const headingMatch = text.match(/^(#{1,6})\s*(\S.*)$/);
   if (headingMatch) {
     const level = headingMatch[1].length;
@@ -129,14 +198,32 @@ function applyBlockShortcuts() {
     return true;
   }
 
+  const taskMatch = text.match(/^[-*+]\s+\[( |x|X)\]\s+(.+)$/);
+  if (taskMatch) {
+    const ul = document.createElement('ul');
+    const li = document.createElement('li');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = taskMatch[1].toLowerCase() === 'x';
+    checkbox.setAttribute('contenteditable', 'false');
+    li.appendChild(checkbox);
+    li.appendChild(document.createTextNode(` ${taskMatch[2]}`));
+    ul.appendChild(li);
+    replaceBlockPreservingCaret(block, ul);
+    wireTaskCheckboxes();
+    return true;
+  }
+
   const unorderedMatch = text.match(/^[-*+]\s+(.+)$/);
   if (unorderedMatch) {
+    if (/^\[[ xX]\]/.test(unorderedMatch[1])) {
+      return false;
+    }
     const ul = document.createElement('ul');
     const li = document.createElement('li');
     li.textContent = unorderedMatch[1];
     ul.appendChild(li);
-    block.replaceWith(ul);
-    placeCaretAtEnd(li);
+    replaceBlockPreservingCaret(block, ul);
     return true;
   }
 
@@ -150,8 +237,7 @@ function applyBlockShortcuts() {
     const li = document.createElement('li');
     li.textContent = orderedMatch[2];
     ol.appendChild(li);
-    block.replaceWith(ol);
-    placeCaretAtEnd(li);
+    replaceBlockPreservingCaret(block, ol);
     return true;
   }
 
@@ -161,8 +247,64 @@ function applyBlockShortcuts() {
     const p = document.createElement('p');
     p.textContent = quoteMatch[1];
     quote.appendChild(p);
-    block.replaceWith(quote);
+    replaceBlockPreservingCaret(block, quote);
+    return true;
+  }
+
+  const ruleMatch = text.match(/^((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/);
+  if (ruleMatch) {
+    const fragment = document.createDocumentFragment();
+    const hr = document.createElement('hr');
+    const p = document.createElement('p');
+    p.innerHTML = '<br>';
+    fragment.append(hr, p);
+    block.replaceWith(fragment);
     placeCaretAtEnd(p);
+    return true;
+  }
+
+  const fenceMatch = text.match(/^```([a-zA-Z0-9_-]+)?$/);
+  if (fenceMatch) {
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    if (fenceMatch[1]) {
+      code.className = `language-${fenceMatch[1]}`;
+      code.setAttribute('data-language', fenceMatch[1]);
+    }
+    pre.appendChild(code);
+    replaceBlockPreservingCaret(block, pre);
+    return true;
+  }
+
+  const tableMatch = text.match(/^\|(.+)\|$/);
+  if (tableMatch && tableMatch[1].includes('|')) {
+    const headers = tableMatch[1].split('|').map((value) => value.trim()).filter(Boolean);
+    if (headers.length >= 2) {
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const tr = document.createElement('tr');
+      for (const header of headers) {
+        const th = document.createElement('th');
+        th.textContent = header;
+        tr.appendChild(th);
+      }
+      thead.appendChild(tr);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      const bodyRow = document.createElement('tr');
+      for (let index = 0; index < headers.length; index += 1) {
+        const td = document.createElement('td');
+        td.innerHTML = '<br>';
+        bodyRow.appendChild(td);
+      }
+      tbody.appendChild(bodyRow);
+      table.appendChild(tbody);
+      replaceBlockPreservingCaret(block, table);
+      return true;
+    }
+  }
+
+  if (applyInlineShortcuts(block)) {
     return true;
   }
 

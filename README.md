@@ -9,6 +9,21 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Left workspace tree for markdown files
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark/System theme toggle (`Cmd/Ctrl + Shift + L`)
+- Live block shortcuts:
+  - headings (`#`, `##`, including `#Title`)
+  - unordered lists (`*`, `-`, `+`)
+  - ordered lists (`1.` or `1)`)
+  - task lists (`- [ ]`, `- [x]`)
+  - blockquotes (`> quote`)
+  - horizontal rules (`---`, `***`, `___`)
+  - fenced code blocks (```)
+- Live inline shortcuts:
+  - links (`[text](url)`)
+  - images (`![alt](url)`)
+  - strikethrough (`~~text~~`)
+  - inline code (`` `code` ``)
+  - bold/italic (`**bold**`, `_italic_`)
+- Table quick-start row (`| col1 | col2 |`)
 - Keyboard shortcuts:
   - `Cmd/Ctrl + N` new file
   - `Cmd/Ctrl + O` open
