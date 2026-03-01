@@ -10,6 +10,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Live outline panel for document headings
 - Workspace search with result navigation
 - Drag-and-drop image import (auto-copies into `assets/` and inserts markdown image links)
+- In-app update check (`Cmd/Ctrl + Shift + U`)
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark theme toggle (`Cmd/Ctrl + Shift + L`)
 - Live block shortcuts:
@@ -35,6 +36,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
   - `Cmd/Ctrl + Shift + B` toggle file sidebar
   - `Cmd/Ctrl + Shift + L` toggle light/dark theme
   - `Cmd/Ctrl + Shift + F` focus workspace search
+  - `Cmd/Ctrl + Shift + U` check for updates
 
 ## Requirements
 
@@ -52,16 +54,44 @@ npm start
 
 Build on the target OS for best results.
 
-### macOS (.dmg)
+### macOS universal (.dmg + .zip)
 
 ```bash
 npm run dist:mac
 ```
 
-### Linux (.AppImage + .deb)
+### Linux multi-arch (.AppImage + .deb for x64 + arm64)
 
 ```bash
 npm run dist:linux
 ```
 
+### Full release build
+
+```bash
+npm run dist:release
+```
+
 Built artifacts are generated in `dist/`.
+
+## macOS signing and notarization
+
+Set these environment variables before running `npm run dist:mac`:
+
+```bash
+export CSC_LINK="file:///absolute/path/DeveloperIDApplication.p12"
+export CSC_KEY_PASSWORD="your-certificate-password"
+export APPLE_ID="your-apple-id@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="YOURTEAMID"
+```
+
+`scripts/notarize.js` will skip notarization automatically if the Apple credentials are missing.
+
+## In-app update feed
+
+Inkflow checks for updates in packaged builds. Feed resolution order:
+
+1. `INKFLOW_UPDATE_URL` (generic provider)
+2. `INKFLOW_UPDATE_OWNER` + `INKFLOW_UPDATE_REPO` (GitHub provider)
+3. `repository.url` in `package.json` (GitHub fallback)

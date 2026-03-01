@@ -13,10 +13,12 @@ const outlineTree = document.getElementById('outline-tree');
 const workspaceMeta = document.getElementById('workspace-meta');
 const sidebarButton = document.getElementById('sidebar-btn');
 const themeButton = document.getElementById('theme-btn');
+const updateButton = document.getElementById('update-btn');
 const newButton = document.getElementById('new-btn');
 const openButton = document.getElementById('open-btn');
 const saveButton = document.getElementById('save-btn');
 const saveAsButton = document.getElementById('save-as-btn');
+const appStatus = document.getElementById('app-status');
 const fileApi = window.fileApi;
 
 const turndownService = new TurndownService({
@@ -55,6 +57,7 @@ const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
 const MOON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+let statusTimer = null;
 
 function getFileName(filePath) {
   if (!filePath) {
@@ -278,6 +281,50 @@ function focusSearchInput() {
 
   searchInput.focus();
   searchInput.select();
+}
+
+function showAppStatus(message, tone = 'info', autoClearMs = 5000) {
+  if (!appStatus) {
+    return;
+  }
+
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
+
+  const cleanMessage = String(message || '').trim();
+  appStatus.textContent = cleanMessage;
+  appStatus.dataset.tone = tone;
+  appStatus.hidden = !cleanMessage;
+
+  if (cleanMessage && autoClearMs > 0) {
+    statusTimer = setTimeout(() => {
+      appStatus.textContent = '';
+      appStatus.hidden = true;
+      appStatus.dataset.tone = 'info';
+      statusTimer = null;
+    }, autoClearMs);
+  }
+}
+
+async function runCheckForUpdates() {
+  if (!fileApi?.checkForUpdates) {
+    showAppStatus('Update checks are unavailable.', 'error', 7000);
+    return;
+  }
+
+  try {
+    const result = await fileApi.checkForUpdates();
+    if (!result) {
+      showAppStatus('Unable to check for updates.', 'error', 7000);
+      return;
+    }
+
+    showAppStatus(result.message, result.ok ? 'info' : 'error', 7000);
+  } catch (error) {
+    showAppStatus(`Unable to check for updates: ${error?.message || String(error)}`, 'error', 7000);
+  }
 }
 
 function jumpToNthMatch(query, ordinal = 0) {
@@ -996,9 +1043,19 @@ editorPanel?.addEventListener('drop', async (event) => {
 
   for (const imageFile of imageFiles) {
     try {
-      const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
-      const fileName = inferImageFileName(imageFile);
-      const imported = await fileApi?.importWorkspaceImageData(bytes, fileName, currentFilePath);
+      const sourcePath = typeof imageFile.path === 'string' ? imageFile.path : '';
+      let imported = null;
+
+      if (sourcePath && fileApi?.importWorkspaceImage) {
+        imported = await fileApi.importWorkspaceImage(sourcePath, currentFilePath);
+      }
+
+      if (!imported && fileApi?.importWorkspaceImageData) {
+        const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
+        const fileName = inferImageFileName(imageFile);
+        imported = await fileApi.importWorkspaceImageData(bytes, fileName, currentFilePath);
+      }
+
       if (!imported?.markdownPath) {
         continue;
       }
@@ -1040,6 +1097,12 @@ editor.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
     event.preventDefault();
     focusSearchInput();
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'u') {
+    event.preventDefault();
+    runCheckForUpdates();
   }
 });
 
@@ -1055,6 +1118,7 @@ searchInput?.addEventListener('input', (event) => {
 });
 
 sidebarButton.addEventListener('click', toggleSidebar);
+updateButton?.addEventListener('click', runCheckForUpdates);
 themeButton.addEventListener('click', cycleTheme);
 newButton.addEventListener('click', doNewFile);
 openButton.addEventListener('click', doOpen);
@@ -1064,6 +1128,9 @@ saveAsButton.addEventListener('click', doSaveAs);
 if (!fileApi) {
   fileMeta.textContent = 'Bridge unavailable. Restart app.';
   sidebarButton.disabled = true;
+  if (updateButton) {
+    updateButton.disabled = true;
+  }
   themeButton.disabled = true;
   newButton.disabled = true;
   openButton.disabled = true;
@@ -1098,6 +1165,13 @@ if (!fileApi) {
 
   fileApi.onFocusSearchFromMenu(() => {
     focusSearchInput();
+  });
+
+  fileApi.onUpdateStatus((payload) => {
+    const type = payload?.type || 'info';
+    const message = payload?.message || '';
+    const tone = type === 'error' ? 'error' : type === 'up-to-date' ? 'success' : 'info';
+    showAppStatus(message, tone, type === 'downloading' ? 0 : 7000);
   });
 }
 

@@ -206,6 +206,21 @@ button.primary {
   max-width: 520px;
 }
 
+.app-status {
+  margin: 3px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  max-width: 520px;
+}
+
+.app-status[data-tone='success'] {
+  color: #0f766e;
+}
+
+.app-status[data-tone='error'] {
+  color: #b91c1c;
+}
+
 .workspace {
   flex: 1;
   min-height: 0;

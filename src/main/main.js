@@ -1,10 +1,195 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 
 let mainWindow;
 const workspaceRoot = process.cwd();
+const updaterState = {
+  configured: false,
+  checking: false,
+};
+
+function inferRepositoryFeed() {
+  try {
+    const packageJsonPath = path.join(app.getAppPath(), 'package.json');
+    const pkg = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
+    const url = String(pkg?.repository?.url || '').trim();
+    const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+    if (match) {
+      return { owner: match[1], repo: match[2] };
+    }
+  } catch {
+    // Ignore package repository parse errors and fall back to env-based config.
+  }
+
+  return null;
+}
+
+function getUpdateFeedConfig() {
+  const genericUrl = String(process.env.INKFLOW_UPDATE_URL || '').trim();
+  if (genericUrl) {
+    return { provider: 'generic', url: genericUrl };
+  }
+
+  const owner = String(process.env.INKFLOW_UPDATE_OWNER || '').trim();
+  const repo = String(process.env.INKFLOW_UPDATE_REPO || '').trim();
+  if (owner && repo) {
+    return { provider: 'github', owner, repo, private: false };
+  }
+
+  const inferred = inferRepositoryFeed();
+  if (inferred) {
+    return { provider: 'github', owner: inferred.owner, repo: inferred.repo, private: false };
+  }
+
+  return null;
+}
+
+function sendUpdateStatus(payload) {
+  if (!mainWindow) {
+    return;
+  }
+
+  mainWindow.webContents.send('app:update-status', payload);
+}
+
+function configureAutoUpdater() {
+  if (!app.isPackaged || updaterState.configured) {
+    return;
+  }
+
+  const feed = getUpdateFeedConfig();
+  if (!feed) {
+    sendUpdateStatus({
+      type: 'info',
+      message: 'Update feed is not configured.',
+    });
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.setFeedURL(feed);
+
+  autoUpdater.on('checking-for-update', () => {
+    updaterState.checking = true;
+    sendUpdateStatus({ type: 'checking', message: 'Checking for updates...' });
+  });
+
+  autoUpdater.on('update-available', async (info) => {
+    sendUpdateStatus({
+      type: 'available',
+      message: `Update ${info.version} is available. Downloading...`,
+      version: info.version,
+    });
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (error) {
+      sendUpdateStatus({
+        type: 'error',
+        message: `Update download failed: ${error?.message || String(error)}`,
+      });
+    }
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    updaterState.checking = false;
+    sendUpdateStatus({
+      type: 'up-to-date',
+      message: `You are up to date (${info?.version || app.getVersion()}).`,
+      version: info?.version || app.getVersion(),
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    const percent = Number.isFinite(progress?.percent) ? progress.percent.toFixed(1) : '0.0';
+    sendUpdateStatus({
+      type: 'downloading',
+      message: `Downloading update... ${percent}%`,
+      percent: progress?.percent || 0,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    updaterState.checking = false;
+    sendUpdateStatus({
+      type: 'downloaded',
+      message: `Update ${info.version} downloaded.`,
+      version: info.version,
+    });
+
+    if (!mainWindow) {
+      return;
+    }
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Install and Restart', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update Ready',
+      message: `Inkflow ${info.version} is ready to install.`,
+      detail: 'Restart now to apply the update.',
+    });
+
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  autoUpdater.on('error', (error) => {
+    updaterState.checking = false;
+    sendUpdateStatus({
+      type: 'error',
+      message: `Update check failed: ${error?.message || String(error)}`,
+    });
+  });
+
+  updaterState.configured = true;
+}
+
+async function checkForUpdates() {
+  if (!app.isPackaged) {
+    return {
+      ok: false,
+      message: 'Update checks are available in packaged builds only.',
+    };
+  }
+
+  configureAutoUpdater();
+  if (!updaterState.configured) {
+    return {
+      ok: false,
+      message: 'Update feed is not configured. Set INKFLOW_UPDATE_URL or INKFLOW_UPDATE_OWNER/INKFLOW_UPDATE_REPO.',
+    };
+  }
+
+  if (updaterState.checking) {
+    return {
+      ok: true,
+      message: 'Already checking for updates...',
+    };
+  }
+
+  try {
+    updaterState.checking = true;
+    await autoUpdater.checkForUpdates();
+    return {
+      ok: true,
+      message: 'Checking for updates...',
+    };
+  } catch (error) {
+    updaterState.checking = false;
+    return {
+      ok: false,
+      message: `Update check failed: ${error?.message || String(error)}`,
+    };
+  }
+}
 
 function shouldIgnorePath(name) {
   return name.startsWith('.') || name === 'node_modules' || name === 'dist';
@@ -36,14 +221,47 @@ function toPosixPath(filePath) {
   return filePath.split(path.sep).join('/');
 }
 
+async function ensureWritableDirectory(dirPath) {
+  if (!dirPath) {
+    return false;
+  }
+
+  try {
+    await fs.mkdir(dirPath, { recursive: true });
+    const probe = path.join(dirPath, `.inkflow-write-${Date.now()}.tmp`);
+    await fs.writeFile(probe, 'ok', 'utf8');
+    await fs.unlink(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveImageBaseDirectory(activeFilePath) {
+  if (activeFilePath && path.isAbsolute(activeFilePath)) {
+    const activeDir = path.dirname(activeFilePath);
+    if (await ensureWritableDirectory(activeDir)) {
+      return activeDir;
+    }
+  }
+
+  const normalizedWorkspaceRoot = path.resolve(workspaceRoot);
+  if (await ensureWritableDirectory(normalizedWorkspaceRoot)) {
+    return normalizedWorkspaceRoot;
+  }
+
+  const documentsFallback = path.join(app.getPath('documents'), 'Inkflow');
+  await fs.mkdir(documentsFallback, { recursive: true });
+  return documentsFallback;
+}
+
 async function getImageImportDestination(sourceName, activeFilePath) {
   if (!sourceName || !isImageFile(sourceName)) {
     return null;
   }
 
-  const hasActiveFile = activeFilePath && isInsideWorkspace(activeFilePath);
-  const anchorDir = hasActiveFile ? path.dirname(activeFilePath) : workspaceRoot;
-  const assetsDir = path.join(anchorDir, 'assets');
+  const markdownBaseDir = await resolveImageBaseDirectory(activeFilePath);
+  const assetsDir = path.join(markdownBaseDir, 'assets');
   await fs.mkdir(assetsDir, { recursive: true });
 
   const ext = path.extname(sourceName);
@@ -59,13 +277,14 @@ async function getImageImportDestination(sourceName, activeFilePath) {
     counter += 1;
   }
 
-  return { candidateName, candidatePath };
+  return { candidateName, candidatePath, markdownBaseDir };
 }
 
-function buildImportedImageResult(candidatePath, candidateName, activeFilePath) {
-  const markdownPath = activeFilePath && isInsideWorkspace(activeFilePath)
-    ? path.relative(path.dirname(activeFilePath), candidatePath)
-    : path.relative(workspaceRoot, candidatePath);
+function buildImportedImageResult(candidatePath, candidateName, activeFilePath, markdownBaseDir) {
+  const referenceBaseDir = activeFilePath && path.isAbsolute(activeFilePath)
+    ? path.dirname(activeFilePath)
+    : markdownBaseDir;
+  const markdownPath = path.relative(referenceBaseDir, candidatePath);
 
   return {
     filePath: candidatePath,
@@ -86,7 +305,12 @@ async function importWorkspaceImage(sourcePath, activeFilePath) {
   }
 
   await fs.copyFile(sourcePath, destination.candidatePath);
-  return buildImportedImageResult(destination.candidatePath, destination.candidateName, activeFilePath);
+  return buildImportedImageResult(
+    destination.candidatePath,
+    destination.candidateName,
+    activeFilePath,
+    destination.markdownBaseDir,
+  );
 }
 
 async function importWorkspaceImageData(bytes, fileName, activeFilePath) {
@@ -105,7 +329,12 @@ async function importWorkspaceImageData(bytes, fileName, activeFilePath) {
       : Buffer.from(bytes);
 
   await fs.writeFile(destination.candidatePath, contentBuffer);
-  return buildImportedImageResult(destination.candidatePath, destination.candidateName, activeFilePath);
+  return buildImportedImageResult(
+    destination.candidatePath,
+    destination.candidateName,
+    activeFilePath,
+    destination.markdownBaseDir,
+  );
 }
 
 async function collectMarkdownFiles(targetDir, files = []) {
@@ -349,6 +578,22 @@ function buildMenu() {
         { role: 'toggledevtools' },
       ],
     },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Check for Updates',
+          accelerator: 'CmdOrCtrl+Shift+U',
+          click: async () => {
+            const result = await checkForUpdates();
+            sendUpdateStatus({
+              type: result.ok ? 'info' : 'error',
+              message: result.message,
+            });
+          },
+        },
+      ],
+    },
   ];
 
   if (process.platform === 'darwin') {
@@ -456,8 +701,19 @@ ipcMain.handle('workspace:import-image-data', async (_, payload) => {
   return importWorkspaceImageData(payload?.bytes, payload?.fileName, payload?.activeFilePath);
 });
 
+ipcMain.handle('app:check-for-updates', async () => {
+  return checkForUpdates();
+});
+
 app.whenReady().then(() => {
   createWindow();
+  configureAutoUpdater();
+
+  if (app.isPackaged) {
+    setTimeout(() => {
+      checkForUpdates().catch(() => {});
+    }, 9000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
