@@ -562,6 +562,14 @@ function isImageLikeFile(file) {
   return file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file.name || '');
 }
 
+function isMarkdownLikeFile(file) {
+  if (!file) {
+    return false;
+  }
+
+  return /\.(md|markdown|mdown|mkd|txt)$/i.test(file.name || '');
+}
+
 function hasFilePayload(dataTransfer) {
   if (!dataTransfer) {
     return false;
@@ -848,6 +856,30 @@ async function doOpen() {
   highlightActiveFile(currentFilePath);
 }
 
+async function openMarkdownDropFile(file) {
+  if (!file) {
+    return;
+  }
+
+  const sourcePath = typeof file.path === 'string' ? file.path : '';
+  if (sourcePath && fileApi?.openFilePath) {
+    const result = await fileApi.openFilePath(sourcePath);
+    if (result) {
+      currentFilePath = result.filePath || sourcePath;
+      setContent(result.content || '');
+      highlightActiveFile(currentFilePath);
+      showAppStatus(`Opened ${getFileName(currentFilePath)}`, 'success', 3000);
+      return;
+    }
+  }
+
+  const fallbackText = await file.text();
+  currentFilePath = '';
+  setContent(fallbackText || '');
+  highlightActiveFile('');
+  showAppStatus('Opened dropped file in temporary mode (save to persist path).', 'info', 5000);
+}
+
 async function doNewFile() {
   currentFilePath = '';
   setContent('');
@@ -1031,13 +1063,15 @@ editorPanel?.addEventListener('dragleave', (event) => {
 
 editorPanel?.addEventListener('drop', async (event) => {
   const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length > 0) {
+    event.preventDefault();
+  }
   const imageFiles = files.filter((file) => isImageLikeFile(file));
   if (imageFiles.length === 0) {
     editorPanel?.classList.remove('drop-active');
     return;
   }
 
-  event.preventDefault();
   editorPanel?.classList.remove('drop-active');
   editor.focus();
 
@@ -1072,6 +1106,42 @@ editorPanel?.addEventListener('drop', async (event) => {
       // Ignore a failed import for one file and continue with other drops.
       console.error('Failed to import dropped image:', error);
     }
+  }
+});
+
+window.addEventListener('dragover', (event) => {
+  if (!hasFilePayload(event.dataTransfer)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'copy';
+});
+
+window.addEventListener('drop', async (event) => {
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length === 0) {
+    return;
+  }
+
+  event.preventDefault();
+  editorPanel?.classList.remove('drop-active');
+
+  const targetInsideEditor = event.target instanceof Element && Boolean(event.target.closest('.editor-panel'));
+  const hasImage = files.some((file) => isImageLikeFile(file));
+  if (targetInsideEditor && hasImage) {
+    return;
+  }
+
+  const markdownFile = files.find((file) => isMarkdownLikeFile(file));
+  if (!markdownFile) {
+    return;
+  }
+
+  try {
+    await openMarkdownDropFile(markdownFile);
+  } catch (error) {
+    showAppStatus(`Failed to open dropped file: ${error?.message || String(error)}`, 'error', 7000);
   }
 });
 

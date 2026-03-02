@@ -6,10 +6,42 @@ const path = require('node:path');
 
 let mainWindow;
 const workspaceRoot = process.cwd();
+let pendingOpenFilePath = null;
 const updaterState = {
   configured: false,
   checking: false,
 };
+
+function isProbablyFilePath(value) {
+  if (!value || typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('-')) {
+    return false;
+  }
+
+  if (/^(https?|file):\/\//i.test(trimmed)) {
+    return false;
+  }
+
+  if (!isMarkdownFile(path.basename(trimmed))) {
+    return false;
+  }
+
+  return fsSync.existsSync(trimmed) && fsSync.statSync(trimmed).isFile();
+}
+
+function getFilePathFromArgv(argv = []) {
+  for (const arg of argv) {
+    if (isProbablyFilePath(arg)) {
+      return path.resolve(arg);
+    }
+  }
+
+  return null;
+}
 
 function inferRepositoryFeed() {
   try {
@@ -53,6 +85,43 @@ function sendUpdateStatus(payload) {
   }
 
   mainWindow.webContents.send('app:update-status', payload);
+}
+
+async function readFilePayload(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(filePath);
+  if (!fsSync.existsSync(resolvedPath) || !fsSync.statSync(resolvedPath).isFile()) {
+    return null;
+  }
+
+  const content = await fs.readFile(resolvedPath, 'utf8');
+  return {
+    filePath: resolvedPath,
+    content,
+  };
+}
+
+async function openFileInRenderer(filePath) {
+  const payload = await readFilePayload(filePath);
+  if (!payload) {
+    return null;
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingOpenFilePath = payload.filePath;
+    return payload;
+  }
+
+  if (mainWindow.webContents.isLoading()) {
+    pendingOpenFilePath = payload.filePath;
+    return payload;
+  }
+
+  mainWindow.webContents.send('menu:open-file', payload);
+  return payload;
 }
 
 function configureAutoUpdater() {
@@ -505,6 +574,15 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  mainWindow.webContents.on('did-finish-load', async () => {
+    if (!pendingOpenFilePath) {
+      return;
+    }
+
+    const queuedPath = pendingOpenFilePath;
+    pendingOpenFilePath = null;
+    await openFileInRenderer(queuedPath);
+  });
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -623,12 +701,14 @@ async function openFileDialog() {
     return null;
   }
 
-  const filePath = filePaths[0];
-  const content = await fs.readFile(filePath, 'utf8');
-  return { filePath, content };
+  return readFilePayload(filePaths[0]);
 }
 
 ipcMain.handle('file:open', openFileDialog);
+
+ipcMain.handle('file:open-path', async (_, payload) => {
+  return readFilePayload(payload?.filePath);
+});
 
 ipcMain.handle('file:save', async (_, payload) => {
   const { filePath, content } = payload;
@@ -709,6 +789,11 @@ app.whenReady().then(() => {
   createWindow();
   configureAutoUpdater();
 
+  const startupFilePath = getFilePathFromArgv(process.argv.slice(1));
+  if (startupFilePath) {
+    pendingOpenFilePath = startupFilePath;
+  }
+
   if (app.isPackaged) {
     setTimeout(() => {
       checkForUpdates().catch(() => {});
@@ -726,4 +811,32 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_, commandLine) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+
+    const filePath = getFilePathFromArgv(commandLine);
+    if (filePath) {
+      openFileInRenderer(filePath).catch(() => {});
+    }
+  });
+}
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  if (!filePath) {
+    return;
+  }
+
+  openFileInRenderer(filePath).catch(() => {});
 });

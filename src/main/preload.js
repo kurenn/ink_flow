@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('fileApi', {
   openFile: () => ipcRenderer.invoke('file:open'),
+  openFilePath: (filePath) => ipcRenderer.invoke('file:open-path', { filePath }),
   saveFile: (filePath, content) => ipcRenderer.invoke('file:save', { filePath, content }),
   saveFileAs: (content, suggestedPath) => ipcRenderer.invoke('file:save-as', { content, suggestedPath }),
   getWorkspaceTree: () => ipcRenderer.invoke('workspace:get-tree'),
