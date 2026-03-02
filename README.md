@@ -11,12 +11,15 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Live outline panel for document headings
 - Workspace search with result navigation
 - Drag-and-drop image import (auto-copies into `assets/` and inserts markdown image links)
+- Paste images from clipboard directly into the editor
+- Click image to edit alt text and drag the resize handle to adjust width
 - In-app update check (`Cmd/Ctrl + Shift + U`)
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark theme toggle (`Cmd/Ctrl + Shift + L`)
 - Live block shortcuts:
   - headings (`#`, `##`, including `#Title`)
   - unordered lists (`*`, `-`, `+`)
+  - list nesting with `Tab` (indent) and `Shift+Tab` (outdent)
   - ordered lists (`1.` or `1)`)
   - task lists (`- [ ]`, `- [x]`)
   - blockquotes (`> quote`)

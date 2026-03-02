@@ -20,6 +20,10 @@ const openButton = document.getElementById('open-btn');
 const saveButton = document.getElementById('save-btn');
 const saveAsButton = document.getElementById('save-as-btn');
 const appStatus = document.getElementById('app-status');
+const imageTools = document.getElementById('image-tools');
+const imageAltInput = document.getElementById('image-alt-input');
+const imageWidthResetButton = document.getElementById('image-width-reset-btn');
+const imageResizeHandle = document.getElementById('image-resize-handle');
 const fileApi = window.fileApi;
 
 const turndownService = new TurndownService({
@@ -38,6 +42,15 @@ turndownService.addRule('img-markdown-path', {
   replacement: (_, node) => {
     const alt = node.getAttribute('alt') || '';
     const src = node.getAttribute('data-md-src') || node.getAttribute('src') || '';
+    const widthAttr = node.getAttribute('width');
+    const widthStyle = (node.style?.width || '').trim();
+    const widthValue = widthAttr || widthStyle;
+    const escapedAlt = String(alt).replace(/"/g, '&quot;');
+    const escapedSrc = String(src).replace(/"/g, '&quot;');
+    if (widthValue) {
+      const escapedWidth = String(widthValue).replace(/"/g, '&quot;');
+      return `<img src="${escapedSrc}" alt="${escapedAlt}" width="${escapedWidth}">`;
+    }
     return `![${alt}](${src})`;
   },
 });
@@ -54,11 +67,17 @@ let isRendering = false;
 let themeMode = 'light';
 let searchDebounceTimer = null;
 let workspaceRootPath = '';
+let selectedImage = null;
+let imageResizeState = null;
 const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
 const MOON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 let statusTimer = null;
+
+function isEditorImage(node) {
+  return node instanceof HTMLImageElement && editor.contains(node);
+}
 
 function getFileName(filePath) {
   if (!filePath) {
@@ -219,6 +238,170 @@ function resolveRelativeImageSources() {
     }
     img.setAttribute('src', toFileUrl(absolutePath));
   }
+}
+
+function wireEditorImages() {
+  const images = editor.querySelectorAll('img');
+  for (const image of images) {
+    image.setAttribute('contenteditable', 'false');
+    image.setAttribute('draggable', 'false');
+    image.onload = () => {
+      if (image === selectedImage) {
+        updateImageToolsPosition();
+      }
+    };
+  }
+}
+
+function clearSelectedImage() {
+  if (selectedImage) {
+    selectedImage.classList.remove('image-selected');
+  }
+  selectedImage = null;
+  imageResizeState = null;
+  if (imageTools) {
+    imageTools.hidden = true;
+  }
+  if (imageResizeHandle) {
+    imageResizeHandle.hidden = true;
+  }
+}
+
+function updateImageToolsPosition() {
+  if (!isEditorImage(selectedImage)) {
+    clearSelectedImage();
+    return;
+  }
+
+  const imageRect = selectedImage.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const toolsWidth = imageTools?.offsetWidth || 300;
+  const toolsHeight = imageTools?.offsetHeight || 42;
+  const margin = 10;
+
+  const preferredTop = imageRect.top - toolsHeight - margin;
+  const fallbackTop = imageRect.bottom + margin;
+  const top = preferredTop >= 8 ? preferredTop : Math.min(fallbackTop, window.innerHeight - toolsHeight - 8);
+  const left = Math.min(
+    Math.max(8, imageRect.left),
+    Math.max(8, viewportWidth - toolsWidth - 8),
+  );
+
+  if (imageTools) {
+    imageTools.style.left = `${left}px`;
+    imageTools.style.top = `${top}px`;
+    imageTools.hidden = false;
+  }
+
+  if (imageResizeHandle) {
+    imageResizeHandle.style.left = `${Math.max(4, imageRect.right - 8)}px`;
+    imageResizeHandle.style.top = `${Math.max(4, imageRect.bottom - 8)}px`;
+    imageResizeHandle.hidden = false;
+  }
+}
+
+function setSelectedImageWidth(widthPx) {
+  if (!isEditorImage(selectedImage)) {
+    return;
+  }
+
+  const editorRect = editor.getBoundingClientRect();
+  const maxWidth = Math.max(120, editorRect.width - 8);
+  const clamped = Math.max(80, Math.min(Math.round(widthPx), Math.round(maxWidth)));
+  selectedImage.setAttribute('width', String(clamped));
+  selectedImage.style.width = `${clamped}px`;
+  selectedImage.style.maxWidth = '100%';
+  updateImageToolsPosition();
+  updateDirtyState();
+}
+
+function selectEditorImage(image) {
+  if (!isEditorImage(image)) {
+    clearSelectedImage();
+    return;
+  }
+
+  if (selectedImage && selectedImage !== image) {
+    selectedImage.classList.remove('image-selected');
+  }
+
+  selectedImage = image;
+  selectedImage.classList.add('image-selected');
+  if (imageAltInput) {
+    imageAltInput.value = selectedImage.getAttribute('alt') || '';
+  }
+  updateImageToolsPosition();
+  requestAnimationFrame(() => {
+    updateImageToolsPosition();
+  });
+}
+
+function startImageResize(event) {
+  if (!isEditorImage(selectedImage)) {
+    return;
+  }
+
+  event.preventDefault();
+  const rect = selectedImage.getBoundingClientRect();
+  imageResizeState = {
+    startX: event.clientX,
+    startWidth: rect.width,
+  };
+}
+
+function insertImportedImage(imported) {
+  if (!imported?.markdownPath) {
+    return;
+  }
+
+  const alt = escapeHtml(getImageAltText(imported.fileName));
+  const markdownPath = escapeHtml(imported.markdownPath);
+  const src = escapeHtml(toFileUrl(imported.filePath || ''));
+  const imageHtml = `<p><img src="${src}" data-md-src="${markdownPath}" alt="${alt}"></p><p><br></p>`;
+  insertHtmlAtCaret(imageHtml);
+  wireEditorImages();
+  updateDirtyState();
+  updateOutline();
+
+  const allImages = editor.querySelectorAll('img');
+  const image = allImages.length > 0 ? allImages[allImages.length - 1] : null;
+  if (image) {
+    selectEditorImage(image);
+  }
+}
+
+function getEventElement(target) {
+  if (target instanceof Element) {
+    return target;
+  }
+
+  if (target instanceof Node && target.parentElement) {
+    return target.parentElement;
+  }
+
+  return null;
+}
+
+function isInsideImageToolsTarget(target) {
+  const element = getEventElement(target);
+  return Boolean(element?.closest('#image-tools'));
+}
+
+function shouldKeepImageToolsOpen(target) {
+  const element = getEventElement(target);
+  if (!selectedImage) {
+    return false;
+  }
+
+  if (element === imageResizeHandle) {
+    return true;
+  }
+
+  if (isInsideImageToolsTarget(element)) {
+    return true;
+  }
+
+  return element === selectedImage;
 }
 
 function normalizeMarkdown(markdown) {
@@ -537,8 +720,10 @@ function renderMarkdownIntoEditor(markdown, keepCaretAtEnd = false) {
   const html = marked.parse(canonicalMarkdown);
   editor.innerHTML = html || '';
   resolveRelativeImageSources();
+  wireEditorImages();
   wireTaskCheckboxes();
   updateOutline();
+  clearSelectedImage();
   if (keepCaretAtEnd) {
     placeCaretAtEnd(editor);
   }
@@ -550,6 +735,7 @@ function insertMarkdownAtCaret(markdownSnippet) {
   const html = marked.parse(canonicalMarkdown);
   insertHtmlAtCaret(html);
   resolveRelativeImageSources();
+  wireEditorImages();
   wireTaskCheckboxes();
   updateDirtyState();
   updateOutline();
@@ -646,6 +832,87 @@ function replaceBlockPreservingCaret(block, nextElement) {
   block.replaceWith(nextElement);
   const caretTarget = nextElement.matches('li, p, h1, h2, h3, h4, h5, h6') ? nextElement : nextElement.querySelector('li, p, code') || nextElement;
   placeCaretAtEnd(caretTarget);
+}
+
+function getCurrentListItem() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const node = selection.anchorNode;
+  const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  const listItem = element?.closest?.('li');
+  if (!listItem || !editor.contains(listItem)) {
+    return null;
+  }
+
+  return listItem;
+}
+
+function indentListItem(listItem) {
+  const list = listItem?.parentElement;
+  if (!list || !/^(UL|OL)$/.test(list.tagName)) {
+    return false;
+  }
+
+  const previousItem = listItem.previousElementSibling;
+  if (!(previousItem instanceof HTMLLIElement)) {
+    return false;
+  }
+
+  let nestedList = Array.from(previousItem.children).find(
+    (child) => child instanceof HTMLElement && child.tagName === list.tagName,
+  );
+
+  if (!nestedList) {
+    nestedList = document.createElement(list.tagName.toLowerCase());
+    previousItem.appendChild(nestedList);
+  }
+
+  nestedList.appendChild(listItem);
+  placeCaretAtEnd(listItem);
+  return true;
+}
+
+function outdentListItem(listItem) {
+  const list = listItem?.parentElement;
+  if (!list || !/^(UL|OL)$/.test(list.tagName)) {
+    return false;
+  }
+
+  const parentListItem = list.parentElement;
+  if (!(parentListItem instanceof HTMLLIElement)) {
+    return false;
+  }
+
+  const outerList = parentListItem.parentElement;
+  if (!outerList || !/^(UL|OL)$/.test(outerList.tagName)) {
+    return false;
+  }
+
+  outerList.insertBefore(listItem, parentListItem.nextElementSibling);
+  if (!list.querySelector('li')) {
+    list.remove();
+  }
+
+  placeCaretAtEnd(listItem);
+  return true;
+}
+
+function handleListTabIndent(event) {
+  const listItem = getCurrentListItem();
+  if (!listItem) {
+    return false;
+  }
+
+  event.preventDefault();
+  const handled = event.shiftKey ? outdentListItem(listItem) : indentListItem(listItem);
+  if (handled) {
+    updateDirtyState();
+    updateOutline();
+  }
+  return true;
 }
 
 function applyInlineShortcuts(block) {
@@ -881,6 +1148,28 @@ async function openMarkdownDropFile(file) {
   showAppStatus('Opened dropped file in temporary mode (save to persist path).', 'info', 5000);
 }
 
+async function importImageFileToEditor(imageFile) {
+  const sourcePath = typeof imageFile.path === 'string' ? imageFile.path : '';
+  let imported = null;
+
+  if (sourcePath && fileApi?.importWorkspaceImage) {
+    imported = await fileApi.importWorkspaceImage(sourcePath, currentFilePath);
+  }
+
+  if (!imported && fileApi?.importWorkspaceImageData) {
+    const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
+    const fileName = inferImageFileName(imageFile);
+    imported = await fileApi.importWorkspaceImageData(bytes, fileName, currentFilePath);
+  }
+
+  if (!imported?.markdownPath) {
+    return false;
+  }
+
+  insertImportedImage(imported);
+  return true;
+}
+
 async function doNewFile() {
   currentFilePath = '';
   setContent('');
@@ -1047,6 +1336,10 @@ async function doChooseWorkspaceFolder() {
 }
 
 editor.addEventListener('input', () => {
+  if (selectedImage && !imageResizeState) {
+    clearSelectedImage();
+  }
+
   if (isRendering) {
     return;
   }
@@ -1056,7 +1349,26 @@ editor.addEventListener('input', () => {
   updateOutline();
 });
 
-editor.addEventListener('paste', (event) => {
+editor.addEventListener('paste', async (event) => {
+  const clipboardItems = Array.from(event.clipboardData?.items || []);
+  const clipboardImages = clipboardItems
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+
+  if (clipboardImages.length > 0) {
+    event.preventDefault();
+    editor.focus();
+    for (const imageFile of clipboardImages) {
+      try {
+        await importImageFileToEditor(imageFile);
+      } catch (error) {
+        console.error('Failed to import pasted image:', error);
+      }
+    }
+    return;
+  }
+
   const pastedText = event.clipboardData?.getData('text/plain') || '';
   if (!pastedText) {
     return;
@@ -1103,31 +1415,7 @@ editorPanel?.addEventListener('drop', async (event) => {
 
   for (const imageFile of imageFiles) {
     try {
-      const sourcePath = typeof imageFile.path === 'string' ? imageFile.path : '';
-      let imported = null;
-
-      if (sourcePath && fileApi?.importWorkspaceImage) {
-        imported = await fileApi.importWorkspaceImage(sourcePath, currentFilePath);
-      }
-
-      if (!imported && fileApi?.importWorkspaceImageData) {
-        const bytes = Array.from(new Uint8Array(await imageFile.arrayBuffer()));
-        const fileName = inferImageFileName(imageFile);
-        imported = await fileApi.importWorkspaceImageData(bytes, fileName, currentFilePath);
-      }
-
-      if (!imported?.markdownPath) {
-        continue;
-      }
-
-      const alt = escapeHtml(getImageAltText(imported.fileName));
-      const markdownPath = escapeHtml(imported.markdownPath);
-      const src = escapeHtml(toFileUrl(imported.filePath || ''));
-      const imageHtml = `<p><img src="${src}" data-md-src="${markdownPath}" alt="${alt}"></p><p><br></p>`;
-      insertHtmlAtCaret(imageHtml);
-      wireTaskCheckboxes();
-      updateDirtyState();
-      updateOutline();
+      await importImageFileToEditor(imageFile);
     } catch (error) {
       // Ignore a failed import for one file and continue with other drops.
       console.error('Failed to import dropped image:', error);
@@ -1171,7 +1459,97 @@ window.addEventListener('drop', async (event) => {
   }
 });
 
+editor.addEventListener('click', (event) => {
+  const target = event.target;
+  if (isEditorImage(target)) {
+    selectEditorImage(target);
+    return;
+  }
+
+  if (!isInsideImageToolsTarget(target)) {
+    clearSelectedImage();
+  }
+});
+
+imageAltInput?.addEventListener('input', () => {
+  if (!isEditorImage(selectedImage)) {
+    return;
+  }
+
+  selectedImage.setAttribute('alt', imageAltInput.value || '');
+  updateDirtyState();
+});
+
+imageWidthResetButton?.addEventListener('click', () => {
+  if (!isEditorImage(selectedImage)) {
+    return;
+  }
+
+  selectedImage.style.removeProperty('width');
+  selectedImage.removeAttribute('width');
+  selectedImage.style.maxWidth = '100%';
+  updateImageToolsPosition();
+  updateDirtyState();
+});
+
+imageResizeHandle?.addEventListener('mousedown', (event) => {
+  startImageResize(event);
+});
+
+window.addEventListener('mousemove', (event) => {
+  if (!imageResizeState || !isEditorImage(selectedImage)) {
+    return;
+  }
+
+  const deltaX = event.clientX - imageResizeState.startX;
+  setSelectedImageWidth(imageResizeState.startWidth + deltaX);
+});
+
+window.addEventListener('mouseup', () => {
+  imageResizeState = null;
+});
+
+window.addEventListener('mousedown', (event) => {
+  if (!selectedImage) {
+    return;
+  }
+
+  if (!isEditorImage(selectedImage)) {
+    clearSelectedImage();
+    return;
+  }
+
+  if (shouldKeepImageToolsOpen(event.target)) {
+    return;
+  }
+
+  clearSelectedImage();
+});
+
+window.addEventListener('resize', () => {
+  updateImageToolsPosition();
+});
+
+editorPanel?.addEventListener('scroll', () => {
+  updateImageToolsPosition();
+});
+
 editor.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab' && handleListTabIndent(event)) {
+    return;
+  }
+
+  if (event.key === 'Escape' && selectedImage) {
+    event.preventDefault();
+    clearSelectedImage();
+    return;
+  }
+
+  const isTypingKey = event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter';
+  if (selectedImage && isTypingKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    clearSelectedImage();
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'b') {
     event.preventDefault();
     toggleSidebar();
@@ -1207,6 +1585,63 @@ editor.addEventListener('keydown', (event) => {
     doChooseWorkspaceFolder();
   }
 });
+
+editor.addEventListener('focusout', (event) => {
+  if (!selectedImage) {
+    return;
+  }
+
+  const nextTarget = event.relatedTarget;
+  if (nextTarget instanceof Element && nextTarget.closest('#image-tools')) {
+    return;
+  }
+
+  clearSelectedImage();
+});
+
+window.addEventListener('pointerdown', (event) => {
+  if (!selectedImage) {
+    return;
+  }
+
+  if (!isEditorImage(selectedImage)) {
+    clearSelectedImage();
+    return;
+  }
+
+  if (shouldKeepImageToolsOpen(event.target)) {
+    return;
+  }
+
+  clearSelectedImage();
+}, true);
+
+window.addEventListener('keydown', (event) => {
+  if (!selectedImage) {
+    return;
+  }
+
+  if (!isEditorImage(selectedImage)) {
+    clearSelectedImage();
+    return;
+  }
+
+  if (isInsideImageToolsTarget(event.target)) {
+    return;
+  }
+
+  const printable = event.key.length === 1;
+  const editorMutationKey = printable || event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter' || event.key === 'Escape';
+  if (!editorMutationKey) {
+    return;
+  }
+
+  if (event.metaKey || event.ctrlKey || event.altKey) {
+    return;
+  }
+
+  clearSelectedImage();
+}, true);
 
 searchInput?.addEventListener('input', (event) => {
   if (searchDebounceTimer) {
