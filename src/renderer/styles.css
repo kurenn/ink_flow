@@ -272,6 +272,41 @@ button.primary {
   color: var(--muted);
 }
 
+.sidebar-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sidebar-icon-btn {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--button-line);
+  background: var(--button-bg);
+  color: var(--muted);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-icon-btn:hover {
+  color: var(--text);
+}
+
 .sidebar-header p {
   margin: 0 6px 10px;
   font-size: 0.72rem;

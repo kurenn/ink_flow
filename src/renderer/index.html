@@ -56,7 +56,12 @@
 
           <section class="sidebar-section">
             <header class="sidebar-header">
-              <h2>Files</h2>
+              <div class="sidebar-header-row">
+                <h2>Files</h2>
+                <button id="workspace-folder-btn" type="button" class="ghost sidebar-icon-btn" title="Open workspace folder (Cmd/Ctrl+Shift+O)" aria-label="Open workspace folder">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19V6h6l2 2h10v11z"/><path d="M12 12v6"/><path d="M9 15h6"/></svg>
+                </button>
+              </div>
               <p id="workspace-meta"></p>
             </header>
             <div id="file-tree" class="file-tree"></div>

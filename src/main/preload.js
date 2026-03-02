@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('fileApi', {
   saveFile: (filePath, content) => ipcRenderer.invoke('file:save', { filePath, content }),
   saveFileAs: (content, suggestedPath) => ipcRenderer.invoke('file:save-as', { content, suggestedPath }),
   getWorkspaceTree: () => ipcRenderer.invoke('workspace:get-tree'),
+  chooseWorkspaceFolder: () => ipcRenderer.invoke('workspace:choose-folder'),
   openWorkspaceFile: (filePath) => ipcRenderer.invoke('workspace:open-file', { filePath }),
   createWorkspaceFile: (suggestedName) => ipcRenderer.invoke('workspace:create-file', { suggestedName }),
   searchWorkspace: (query) => ipcRenderer.invoke('workspace:search', { query }),
@@ -17,6 +18,7 @@ contextBridge.exposeInMainWorld('fileApi', {
   onSaveFileFromMenu: (callback) => ipcRenderer.on('menu:save-file', callback),
   onSaveAsFromMenu: (callback) => ipcRenderer.on('menu:save-file-as', callback),
   onToggleSidebarFromMenu: (callback) => ipcRenderer.on('menu:toggle-sidebar', callback),
+  onOpenWorkspaceFromMenu: (callback) => ipcRenderer.on('menu:open-workspace', callback),
   onFocusSearchFromMenu: (callback) => ipcRenderer.on('menu:focus-search', callback),
   onUpdateStatus: (callback) => ipcRenderer.on('app:update-status', (_, payload) => callback(payload)),
 });

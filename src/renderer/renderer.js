@@ -11,6 +11,7 @@ const searchResults = document.getElementById('search-results');
 const fileTree = document.getElementById('file-tree');
 const outlineTree = document.getElementById('outline-tree');
 const workspaceMeta = document.getElementById('workspace-meta');
+const workspaceFolderButton = document.getElementById('workspace-folder-btn');
 const sidebarButton = document.getElementById('sidebar-btn');
 const themeButton = document.getElementById('theme-btn');
 const updateButton = document.getElementById('update-btn');
@@ -1001,6 +1002,16 @@ function highlightActiveFile(filePath) {
   }
 }
 
+function applyWorkspaceTree(tree) {
+  workspaceRootPath = tree?.path || '';
+  workspaceMeta.textContent = tree?.path || '';
+  fileTree.innerHTML = '';
+
+  for (const child of tree?.children || []) {
+    fileTree.appendChild(createFileNode(child));
+  }
+}
+
 async function loadWorkspaceTree() {
   if (!fileApi) {
     return;
@@ -1011,13 +1022,28 @@ async function loadWorkspaceTree() {
     return;
   }
 
-  workspaceRootPath = tree.path || '';
-  workspaceMeta.textContent = tree.path;
-  fileTree.innerHTML = '';
+  applyWorkspaceTree(tree);
+}
 
-  for (const child of tree.children || []) {
-    fileTree.appendChild(createFileNode(child));
+async function doChooseWorkspaceFolder() {
+  if (!fileApi?.chooseWorkspaceFolder) {
+    return;
   }
+
+  const tree = await fileApi.chooseWorkspaceFolder();
+  if (!tree) {
+    return;
+  }
+
+  applyWorkspaceTree(tree);
+  highlightActiveFile(currentFilePath);
+  if (searchInput) {
+    searchInput.value = '';
+  }
+  if (searchResults) {
+    searchResults.innerHTML = '';
+  }
+  showAppStatus(`Workspace: ${tree.path}`, 'success', 4000);
 }
 
 editor.addEventListener('input', () => {
@@ -1173,6 +1199,12 @@ editor.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'u') {
     event.preventDefault();
     runCheckForUpdates();
+    return;
+  }
+
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'o') {
+    event.preventDefault();
+    doChooseWorkspaceFolder();
   }
 });
 
@@ -1188,6 +1220,7 @@ searchInput?.addEventListener('input', (event) => {
 });
 
 sidebarButton.addEventListener('click', toggleSidebar);
+workspaceFolderButton?.addEventListener('click', doChooseWorkspaceFolder);
 updateButton?.addEventListener('click', runCheckForUpdates);
 themeButton.addEventListener('click', cycleTheme);
 newButton.addEventListener('click', doNewFile);
@@ -1198,6 +1231,9 @@ saveAsButton.addEventListener('click', doSaveAs);
 if (!fileApi) {
   fileMeta.textContent = 'Bridge unavailable. Restart app.';
   sidebarButton.disabled = true;
+  if (workspaceFolderButton) {
+    workspaceFolderButton.disabled = true;
+  }
   if (updateButton) {
     updateButton.disabled = true;
   }
@@ -1231,6 +1267,10 @@ if (!fileApi) {
 
   fileApi.onToggleSidebarFromMenu(() => {
     toggleSidebar();
+  });
+
+  fileApi.onOpenWorkspaceFromMenu(() => {
+    doChooseWorkspaceFolder();
   });
 
   fileApi.onFocusSearchFromMenu(() => {

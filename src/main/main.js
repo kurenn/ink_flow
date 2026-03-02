@@ -5,7 +5,7 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 
 let mainWindow;
-const workspaceRoot = process.cwd();
+let workspaceRoot = process.cwd();
 let pendingOpenFilePath = null;
 const updaterState = {
   configured: false,
@@ -85,6 +85,93 @@ function sendUpdateStatus(payload) {
   }
 
   mainWindow.webContents.send('app:update-status', payload);
+}
+
+function getSettingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function getDefaultWorkspaceRoot() {
+  if (app.isPackaged) {
+    return path.join(app.getPath('documents'), 'Inkflow');
+  }
+  return process.cwd();
+}
+
+async function loadAppSettings() {
+  const settingsPath = getSettingsPath();
+  try {
+    const raw = await fs.readFile(settingsPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveAppSettings(settings) {
+  const settingsPath = getSettingsPath();
+  const json = JSON.stringify(settings || {}, null, 2);
+  await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+  await fs.writeFile(settingsPath, json, 'utf8');
+}
+
+async function initializeWorkspaceRoot() {
+  const settings = await loadAppSettings();
+  const configuredRoot = typeof settings.workspaceRoot === 'string' ? settings.workspaceRoot.trim() : '';
+  const candidateRoot = configuredRoot || getDefaultWorkspaceRoot();
+  const normalized = path.resolve(candidateRoot);
+  await fs.mkdir(normalized, { recursive: true });
+  workspaceRoot = normalized;
+
+  if (settings.workspaceRoot !== workspaceRoot) {
+    await saveAppSettings({
+      ...settings,
+      workspaceRoot,
+    });
+  }
+}
+
+function getWorkspacePayload(children = []) {
+  return {
+    type: 'directory',
+    name: path.basename(workspaceRoot) || workspaceRoot,
+    path: workspaceRoot,
+    children,
+  };
+}
+
+async function getWorkspaceTreePayload() {
+  const children = await buildWorkspaceTree(workspaceRoot);
+  return getWorkspacePayload(children);
+}
+
+async function chooseWorkspaceFolderDialog() {
+  if (!mainWindow) {
+    return null;
+  }
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Workspace Folder',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: workspaceRoot,
+  });
+
+  if (canceled || filePaths.length === 0) {
+    return null;
+  }
+
+  const selectedRoot = path.resolve(filePaths[0]);
+  await fs.mkdir(selectedRoot, { recursive: true });
+  workspaceRoot = selectedRoot;
+
+  const settings = await loadAppSettings();
+  await saveAppSettings({
+    ...settings,
+    workspaceRoot,
+  });
+
+  return getWorkspaceTreePayload();
 }
 
 async function readFilePayload(filePath) {
@@ -557,14 +644,18 @@ async function buildWorkspaceTree(targetDir, depth = 0, maxDepth = 4) {
 }
 
 function createWindow() {
-  const appIconPath = path.join(workspaceRoot, 'build/icon.png');
+  const iconCandidates = [
+    path.join(process.cwd(), 'build/icon.png'),
+    path.join(app.getAppPath(), 'build/icon.png'),
+  ];
+  const appIconPath = iconCandidates.find((candidate) => fsSync.existsSync(candidate));
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 760,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#f4f5f7',
-    ...(fsSync.existsSync(appIconPath) ? { icon: appIconPath } : {}),
+    ...(appIconPath ? { icon: appIconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -610,6 +701,11 @@ function buildMenu() {
               mainWindow.webContents.send('menu:open-file', result);
             }
           },
+        },
+        {
+          label: 'Open Folder',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => mainWindow.webContents.send('menu:open-workspace'),
         },
         {
           label: 'Save',
@@ -743,13 +839,11 @@ ipcMain.handle('file:save-as', async (_, payload) => {
 });
 
 ipcMain.handle('workspace:get-tree', async () => {
-  const children = await buildWorkspaceTree(workspaceRoot);
-  return {
-    type: 'directory',
-    name: path.basename(workspaceRoot) || workspaceRoot,
-    path: workspaceRoot,
-    children,
-  };
+  return getWorkspaceTreePayload();
+});
+
+ipcMain.handle('workspace:choose-folder', async () => {
+  return chooseWorkspaceFolderDialog();
 });
 
 ipcMain.handle('workspace:open-file', async (_, payload) => {
@@ -785,7 +879,8 @@ ipcMain.handle('app:check-for-updates', async () => {
   return checkForUpdates();
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initializeWorkspaceRoot();
   createWindow();
   configureAutoUpdater();
 

@@ -7,6 +7,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Typora-like single-pane live markdown rendering
 - New, Open, Save, and Save As support
 - Left workspace tree for markdown files
+- Workspace folder picker with persisted path
 - Live outline panel for document headings
 - Workspace search with result navigation
 - Drag-and-drop image import (auto-copies into `assets/` and inserts markdown image links)
@@ -31,6 +32,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Keyboard shortcuts:
   - `Cmd/Ctrl + N` new file
   - `Cmd/Ctrl + O` open
+  - `Cmd/Ctrl + Shift + O` open workspace folder
   - `Cmd/Ctrl + S` save
   - `Cmd/Ctrl + Shift + S` save as
   - `Cmd/Ctrl + Shift + B` toggle file sidebar
@@ -73,6 +75,12 @@ npm run dist:release
 ```
 
 Built artifacts are generated in `dist/`.
+
+## Workspace behavior
+
+- Development mode defaults to the current working directory.
+- Packaged app defaults to `~/Documents/Inkflow`.
+- The selected workspace folder is persisted in app settings and restored on next launch.
 
 ## macOS signing and notarization
 
