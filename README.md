@@ -85,20 +85,6 @@ Built artifacts are generated in `dist/`.
 - Packaged app defaults to `~/Documents/Inkflow`.
 - The selected workspace folder is persisted in app settings and restored on next launch.
 
-## macOS signing and notarization
-
-Set these environment variables before running `npm run dist:mac`:
-
-```bash
-export CSC_LINK="file:///absolute/path/DeveloperIDApplication.p12"
-export CSC_KEY_PASSWORD="your-certificate-password"
-export APPLE_ID="your-apple-id@example.com"
-export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-export APPLE_TEAM_ID="YOURTEAMID"
-```
-
-`scripts/notarize.js` will skip notarization automatically if the Apple credentials are missing.
-
 ## In-app update feed
 
 Inkflow checks for updates in packaged builds. Feed resolution order:
