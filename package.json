@@ -18,7 +18,9 @@
     "dist:mac": "npm run icons:build && electron-builder --mac dmg zip --universal",
     "dist:mac:arm64": "npm run icons:build && electron-builder --mac dmg zip --arm64",
     "dist:mac:x64": "npm run icons:build && electron-builder --mac dmg zip --x64",
-    "dist:linux": "npm run icons:build && electron-builder --linux AppImage deb --x64 --arm64"
+    "dist:linux": "npm run icons:build && npm run dist:linux:x64 && npm run dist:linux:arm64",
+    "dist:linux:x64": "electron-builder --linux AppImage deb --x64",
+    "dist:linux:arm64": "electron-builder --linux AppImage deb --arm64"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
