@@ -87,7 +87,39 @@ Built artifacts are generated in `dist/`.
 
 ## In-app update feed
 
-Inkflow checks for updates in packaged builds. Feed resolution order:
+Inkflow checks for updates in packaged builds (startup + `Cmd/Ctrl + Shift + U`).
+
+### Current GitHub feed
+
+This project is configured for:
+
+- Owner: `kurenn`
+- Repo: `ink_flow`
+
+If `repository.url` remains `https://github.com/kurenn/ink_flow.git`, no extra env vars are required for GitHub-based update checks.
+
+### Release files required for mac updates
+
+For each version, publish these files to the GitHub Release:
+
+1. `Inkflow-<version>-mac-universal.zip`
+2. `latest-mac.yml`
+
+Recommended to also upload:
+
+- `Inkflow-<version>-mac-universal.dmg`
+
+### Build + tag + publish flow
+
+1. Bump version in `package.json` (and lockfile)
+2. Build: `npm run dist:mac`
+3. Create and push tag: `v<version>`
+4. Create GitHub Release for that tag
+5. Upload the artifacts listed above
+
+### Feed override options (optional)
+
+Resolution order:
 
 1. `INKFLOW_UPDATE_URL` (generic provider)
 2. `INKFLOW_UPDATE_OWNER` + `INKFLOW_UPDATE_REPO` (GitHub provider)
