@@ -1,6 +1,6 @@
 {
   "name": "inkflow",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A simple and clean Markdown editor for macOS and Linux",
   "main": "src/main/main.js",
   "author": {
@@ -72,14 +72,14 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "abrahamkuri",
-        "repo": "inkflow"
+        "owner": "kurenn",
+        "repo": "ink_flow"
       }
     ],
     "electronUpdaterCompatibility": ">=2.16"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/abrahamkuri/inkflow.git"
+    "url": "https://github.com/kurenn/ink_flow.git"
   }
 }
