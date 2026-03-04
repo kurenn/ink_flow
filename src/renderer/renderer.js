@@ -24,6 +24,10 @@ const imageTools = document.getElementById('image-tools');
 const imageAltInput = document.getElementById('image-alt-input');
 const imageWidthResetButton = document.getElementById('image-width-reset-btn');
 const imageResizeHandle = document.getElementById('image-resize-handle');
+const commandPalette = document.getElementById('command-palette');
+const commandPaletteBackdrop = document.getElementById('command-palette-backdrop');
+const commandPaletteInput = document.getElementById('command-palette-input');
+const commandPaletteResults = document.getElementById('command-palette-results');
 const fileApi = window.fileApi;
 
 const turndownService = new TurndownService({
@@ -67,8 +71,13 @@ let isRendering = false;
 let themeMode = 'light';
 let searchDebounceTimer = null;
 let workspaceRootPath = '';
+let workspaceTreeSnapshot = null;
 let selectedImage = null;
 let imageResizeState = null;
+let commandPaletteItems = [];
+let commandPaletteSelectedIndex = 0;
+let commandPaletteOpen = false;
+let commandPaletteRestoredFocus = null;
 const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
@@ -467,6 +476,434 @@ function focusSearchInput() {
   searchInput.select();
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fuzzyScore(query, candidate) {
+  if (!query) {
+    return 1;
+  }
+
+  if (!candidate) {
+    return -1;
+  }
+
+  if (candidate === query) {
+    return 240;
+  }
+
+  if (candidate.startsWith(query)) {
+    return 200 - Math.min(40, candidate.length - query.length);
+  }
+
+  const containsIndex = candidate.indexOf(query);
+  if (containsIndex >= 0) {
+    return 150 - Math.min(50, containsIndex);
+  }
+
+  let queryIndex = 0;
+  let sequenceBonus = 0;
+  let previousMatch = -2;
+
+  for (let candidateIndex = 0; candidateIndex < candidate.length && queryIndex < query.length; candidateIndex += 1) {
+    if (candidate[candidateIndex] !== query[queryIndex]) {
+      continue;
+    }
+
+    if (candidateIndex === previousMatch + 1) {
+      sequenceBonus += 6;
+    } else {
+      sequenceBonus += 2;
+    }
+    previousMatch = candidateIndex;
+    queryIndex += 1;
+  }
+
+  if (queryIndex === query.length) {
+    return 55 + sequenceBonus;
+  }
+
+  return -1;
+}
+
+function flattenWorkspaceFileNodes(treeNode, output = []) {
+  if (!treeNode) {
+    return output;
+  }
+
+  for (const child of treeNode.children || []) {
+    if (child.type === 'file') {
+      output.push(child);
+      continue;
+    }
+
+    if (child.type === 'directory') {
+      flattenWorkspaceFileNodes(child, output);
+    }
+  }
+
+  return output;
+}
+
+function relativeWorkspacePath(filePath) {
+  const fullPath = String(filePath || '');
+  const rootPath = String(workspaceRootPath || '');
+  if (!rootPath) {
+    return getFileName(fullPath);
+  }
+
+  const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalizedFile = fullPath.replace(/\\/g, '/');
+
+  if (!normalizedFile.startsWith(`${normalizedRoot}/`)) {
+    return getFileName(fullPath);
+  }
+
+  return normalizedFile.slice(normalizedRoot.length + 1);
+}
+
+function makeCommandPaletteActions() {
+  return [
+    {
+      id: 'new-file',
+      kind: 'Command',
+      title: 'New File',
+      subtitle: 'Start a new untitled document',
+      keywords: 'create untitled',
+      run: () => doNewFile(),
+    },
+    {
+      id: 'open-file',
+      kind: 'Command',
+      title: 'Open File',
+      subtitle: 'Open an existing markdown document',
+      keywords: 'open markdown file',
+      run: () => doOpen(),
+    },
+    {
+      id: 'save-file',
+      kind: 'Command',
+      title: 'Save',
+      subtitle: 'Save current document',
+      keywords: 'write persist',
+      run: () => doSave(),
+    },
+    {
+      id: 'save-file-as',
+      kind: 'Command',
+      title: 'Save As',
+      subtitle: 'Save current document to a new path',
+      keywords: 'save copy rename',
+      run: () => doSaveAs(),
+    },
+    {
+      id: 'toggle-sidebar',
+      kind: 'Command',
+      title: 'Toggle Sidebar',
+      subtitle: 'Show or hide workspace panel',
+      keywords: 'files outline panel',
+      run: () => toggleSidebar(),
+    },
+    {
+      id: 'focus-search',
+      kind: 'Command',
+      title: 'Find in Workspace',
+      subtitle: 'Focus sidebar search input',
+      keywords: 'search find files',
+      run: () => focusSearchInput(),
+    },
+    {
+      id: 'open-workspace',
+      kind: 'Command',
+      title: 'Open Workspace Folder',
+      subtitle: 'Choose a different workspace folder',
+      keywords: 'folder project directory',
+      run: () => doChooseWorkspaceFolder(),
+    },
+    {
+      id: 'toggle-theme',
+      kind: 'Command',
+      title: 'Toggle Theme',
+      subtitle: 'Switch between light and dark mode',
+      keywords: 'appearance light dark',
+      run: () => cycleTheme(),
+    },
+    {
+      id: 'check-updates',
+      kind: 'Command',
+      title: 'Check for Updates',
+      subtitle: 'Query GitHub release feed',
+      keywords: 'refresh update version',
+      run: () => runCheckForUpdates(),
+    },
+    {
+      id: 'insert-h1',
+      kind: 'Insert',
+      title: 'Insert Heading 1',
+      subtitle: '# Heading',
+      keywords: 'markdown heading h1',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('# Heading');
+      },
+    },
+    {
+      id: 'insert-h2',
+      kind: 'Insert',
+      title: 'Insert Heading 2',
+      subtitle: '## Heading',
+      keywords: 'markdown heading h2',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('## Heading');
+      },
+    },
+    {
+      id: 'insert-bulleted-list',
+      kind: 'Insert',
+      title: 'Insert Bulleted List',
+      subtitle: '- List item',
+      keywords: 'unordered list bullet markdown',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('- List item');
+      },
+    },
+    {
+      id: 'insert-numbered-list',
+      kind: 'Insert',
+      title: 'Insert Numbered List',
+      subtitle: '1. List item',
+      keywords: 'ordered list markdown',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('1. List item');
+      },
+    },
+    {
+      id: 'insert-checklist',
+      kind: 'Insert',
+      title: 'Insert Checklist Item',
+      subtitle: '- [ ] Todo',
+      keywords: 'task checkbox todo markdown',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('- [ ] Todo');
+      },
+    },
+    {
+      id: 'insert-code-fence',
+      kind: 'Insert',
+      title: 'Insert Code Fence',
+      subtitle: '```',
+      keywords: 'code block fenced markdown',
+      run: () => {
+        editor.focus();
+        insertMarkdownAtCaret('```text\ncode\n```');
+      },
+    },
+  ];
+}
+
+function buildCommandPaletteSourceItems() {
+  const items = [...makeCommandPaletteActions()];
+  const workspaceFiles = flattenWorkspaceFileNodes(workspaceTreeSnapshot, []);
+
+  for (const fileNode of workspaceFiles) {
+    const relativePath = relativeWorkspacePath(fileNode.path);
+    items.push({
+      id: `file:${fileNode.path}`,
+      kind: 'File',
+      title: getFileName(fileNode.path),
+      subtitle: relativePath,
+      keywords: `open file ${relativePath}`,
+      run: () => openWorkspaceFileByPath(fileNode.path),
+    });
+  }
+
+  return items;
+}
+
+function rankCommandPaletteItems(query) {
+  const normalizedQuery = normalizeSearchText(query);
+  const sourceItems = buildCommandPaletteSourceItems();
+  const ranked = [];
+
+  for (let index = 0; index < sourceItems.length; index += 1) {
+    const item = sourceItems[index];
+    const title = normalizeSearchText(item.title);
+    const searchable = normalizeSearchText(`${item.title} ${item.subtitle || ''} ${item.keywords || ''}`);
+    const score = Math.max(fuzzyScore(normalizedQuery, title), fuzzyScore(normalizedQuery, searchable));
+    if (score < 0) {
+      continue;
+    }
+
+    const kindBoost = item.kind === 'Command' ? 10 : item.kind === 'Insert' ? 8 : 0;
+    ranked.push({
+      item,
+      score: score + kindBoost,
+      order: index,
+    });
+  }
+
+  ranked.sort((a, b) => b.score - a.score || a.order - b.order || a.item.title.localeCompare(b.item.title));
+  return ranked.map((entry) => entry.item);
+}
+
+function setCommandPaletteSelection(index, ensureVisible = true) {
+  if (!commandPaletteItems.length) {
+    commandPaletteSelectedIndex = 0;
+    return;
+  }
+
+  const maxIndex = commandPaletteItems.length - 1;
+  commandPaletteSelectedIndex = Math.min(maxIndex, Math.max(0, index));
+
+  if (!commandPaletteResults) {
+    return;
+  }
+
+  const rows = commandPaletteResults.querySelectorAll('.command-palette-item');
+  rows.forEach((row, rowIndex) => {
+    row.classList.toggle('is-selected', rowIndex === commandPaletteSelectedIndex);
+  });
+
+  if (!ensureVisible) {
+    return;
+  }
+
+  const selectedRow = rows[commandPaletteSelectedIndex];
+  selectedRow?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderCommandPaletteResults() {
+  if (!commandPaletteResults) {
+    return;
+  }
+
+  commandPaletteResults.innerHTML = '';
+
+  if (commandPaletteItems.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'command-palette-empty';
+    empty.textContent = 'No commands found';
+    commandPaletteResults.appendChild(empty);
+    return;
+  }
+
+  commandPaletteItems.forEach((item, index) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'command-palette-item';
+    row.dataset.index = String(index);
+
+    const main = document.createElement('span');
+    main.className = 'command-palette-item-main';
+
+    const title = document.createElement('span');
+    title.className = 'command-palette-item-title';
+    title.textContent = item.title;
+    main.appendChild(title);
+
+    if (item.subtitle) {
+      const subtitle = document.createElement('span');
+      subtitle.className = 'command-palette-item-subtitle';
+      subtitle.textContent = item.subtitle;
+      main.appendChild(subtitle);
+    }
+
+    const kind = document.createElement('span');
+    kind.className = 'command-palette-item-kind';
+    kind.textContent = item.kind;
+
+    row.append(main, kind);
+    row.addEventListener('mouseenter', () => {
+      setCommandPaletteSelection(index, false);
+    });
+    row.addEventListener('click', () => {
+      executeCommandPaletteItem(index);
+    });
+
+    commandPaletteResults.appendChild(row);
+  });
+
+  setCommandPaletteSelection(commandPaletteSelectedIndex);
+}
+
+function refreshCommandPalette() {
+  const query = commandPaletteInput?.value || '';
+  commandPaletteItems = rankCommandPaletteItems(query).slice(0, 80);
+  commandPaletteSelectedIndex = 0;
+  renderCommandPaletteResults();
+}
+
+function closeCommandPalette(restoreFocus = true) {
+  if (!commandPaletteOpen) {
+    return;
+  }
+
+  commandPaletteOpen = false;
+  if (commandPalette) {
+    commandPalette.hidden = true;
+  }
+
+  commandPaletteItems = [];
+  commandPaletteSelectedIndex = 0;
+  if (commandPaletteInput) {
+    commandPaletteInput.value = '';
+  }
+  if (commandPaletteResults) {
+    commandPaletteResults.innerHTML = '';
+  }
+
+  if (restoreFocus && commandPaletteRestoredFocus instanceof HTMLElement) {
+    commandPaletteRestoredFocus.focus();
+  }
+  commandPaletteRestoredFocus = null;
+}
+
+function openCommandPalette(initialQuery = '') {
+  if (!commandPalette || !commandPaletteInput) {
+    return;
+  }
+
+  commandPaletteRestoredFocus = document.activeElement instanceof HTMLElement ? document.activeElement : editor;
+  commandPaletteOpen = true;
+  commandPalette.hidden = false;
+  commandPaletteInput.value = initialQuery;
+  refreshCommandPalette();
+  commandPaletteInput.focus();
+  commandPaletteInput.setSelectionRange(commandPaletteInput.value.length, commandPaletteInput.value.length);
+}
+
+function toggleCommandPalette() {
+  if (commandPaletteOpen) {
+    closeCommandPalette();
+    return;
+  }
+
+  openCommandPalette();
+}
+
+async function executeCommandPaletteItem(index = commandPaletteSelectedIndex) {
+  const item = commandPaletteItems[index];
+  if (!item) {
+    return;
+  }
+
+  closeCommandPalette(false);
+
+  try {
+    await item.run();
+  } catch (error) {
+    showAppStatus(`Command failed: ${error?.message || String(error)}`, 'error', 7000);
+  }
+}
+
 function showAppStatus(message, tone = 'info', autoClearMs = 5000) {
   if (!appStatus) {
     return;
@@ -569,18 +1006,27 @@ async function openSearchResult(filePath, query, ordinal) {
     return;
   }
 
+  await openWorkspaceFileByPath(filePath);
+
+  requestAnimationFrame(() => {
+    jumpToNthMatch(query, ordinal);
+  });
+}
+
+async function openWorkspaceFileByPath(filePath) {
+  if (!fileApi || !filePath) {
+    return false;
+  }
+
   const result = await fileApi.openWorkspaceFile(filePath);
   if (!result) {
-    return;
+    return false;
   }
 
   currentFilePath = result.filePath;
   setContent(result.content);
   highlightActiveFile(currentFilePath);
-
-  requestAnimationFrame(() => {
-    jumpToNthMatch(query, ordinal);
-  });
+  return true;
 }
 
 function renderSearchResults(query, groupedResults) {
@@ -1250,18 +1696,7 @@ function createFileNode(node) {
     button.textContent = node.name;
     button.dataset.filePath = node.path;
     button.addEventListener('click', async () => {
-      if (!fileApi) {
-        return;
-      }
-
-      const result = await fileApi.openWorkspaceFile(node.path);
-      if (!result) {
-        return;
-      }
-
-      currentFilePath = result.filePath;
-      setContent(result.content);
-      highlightActiveFile(currentFilePath);
+      await openWorkspaceFileByPath(node.path);
     });
     return button;
   }
@@ -1292,12 +1727,17 @@ function highlightActiveFile(filePath) {
 }
 
 function applyWorkspaceTree(tree) {
+  workspaceTreeSnapshot = tree || null;
   workspaceRootPath = tree?.path || '';
   workspaceMeta.textContent = tree?.path || '';
   fileTree.innerHTML = '';
 
   for (const child of tree?.children || []) {
     fileTree.appendChild(createFileNode(child));
+  }
+
+  if (commandPaletteOpen) {
+    refreshCommandPalette();
   }
 }
 
@@ -1534,7 +1974,59 @@ editorPanel?.addEventListener('scroll', () => {
   updateImageToolsPosition();
 });
 
+commandPaletteBackdrop?.addEventListener('click', () => {
+  closeCommandPalette();
+});
+
+commandPaletteInput?.addEventListener('input', () => {
+  refreshCommandPalette();
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.isComposing) {
+    return;
+  }
+
+  const commandShortcut = (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k';
+  if (commandShortcut) {
+    event.preventDefault();
+    toggleCommandPalette();
+    return;
+  }
+
+  if (!commandPaletteOpen) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeCommandPalette();
+    return;
+  }
+
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setCommandPaletteSelection(commandPaletteSelectedIndex + 1);
+    return;
+  }
+
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setCommandPaletteSelection(commandPaletteSelectedIndex - 1);
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    executeCommandPaletteItem();
+  }
+}, true);
+
 editor.addEventListener('keydown', (event) => {
+  if (commandPaletteOpen) {
+    return;
+  }
+
   if (event.key === 'Tab' && handleListTabIndent(event)) {
     return;
   }
@@ -1710,6 +2202,10 @@ if (!fileApi) {
 
   fileApi.onFocusSearchFromMenu(() => {
     focusSearchInput();
+  });
+
+  fileApi.onOpenCommandPaletteFromMenu(() => {
+    openCommandPalette();
   });
 
   fileApi.onUpdateStatus((payload) => {

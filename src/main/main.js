@@ -733,6 +733,11 @@ function buildMenu() {
         { role: 'selectAll' },
         { type: 'separator' },
         {
+          label: 'Command Palette',
+          accelerator: 'CmdOrCtrl+K',
+          click: () => mainWindow.webContents.send('menu:open-command-palette'),
+        },
+        {
           label: 'Find in Workspace',
           accelerator: 'CmdOrCtrl+Shift+F',
           click: () => mainWindow.webContents.send('menu:focus-search'),

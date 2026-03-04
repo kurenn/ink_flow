@@ -20,5 +20,6 @@ contextBridge.exposeInMainWorld('fileApi', {
   onToggleSidebarFromMenu: (callback) => ipcRenderer.on('menu:toggle-sidebar', callback),
   onOpenWorkspaceFromMenu: (callback) => ipcRenderer.on('menu:open-workspace', callback),
   onFocusSearchFromMenu: (callback) => ipcRenderer.on('menu:focus-search', callback),
+  onOpenCommandPaletteFromMenu: (callback) => ipcRenderer.on('menu:open-command-palette', callback),
   onUpdateStatus: (callback) => ipcRenderer.on('app:update-status', (_, payload) => callback(payload)),
 });

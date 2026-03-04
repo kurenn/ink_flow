@@ -14,6 +14,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
 - Paste images from clipboard directly into the editor
 - Click image to edit alt text and drag the resize handle to adjust width
 - In-app update check (`Cmd/Ctrl + Shift + U`)
+- Command palette (`Cmd/Ctrl + K`)
 - Sidebar toggle (`Cmd/Ctrl + Shift + B`)
 - Light/Dark theme toggle (`Cmd/Ctrl + Shift + L`)
 - Live block shortcuts:
@@ -38,6 +39,7 @@ A simple and clean desktop Markdown editor for macOS and Linux.
   - `Cmd/Ctrl + Shift + O` open workspace folder
   - `Cmd/Ctrl + S` save
   - `Cmd/Ctrl + Shift + S` save as
+  - `Cmd/Ctrl + K` open command palette
   - `Cmd/Ctrl + Shift + B` toggle file sidebar
   - `Cmd/Ctrl + Shift + L` toggle light/dark theme
   - `Cmd/Ctrl + Shift + F` focus workspace search

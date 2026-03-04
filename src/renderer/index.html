@@ -87,6 +87,20 @@
       <button id="image-width-reset-btn" type="button" class="ghost">Reset Size</button>
     </div>
     <div id="image-resize-handle" class="image-resize-handle" hidden aria-hidden="true"></div>
+    <div id="command-palette" class="command-palette" hidden>
+      <button id="command-palette-backdrop" type="button" class="command-palette-backdrop" aria-label="Close command palette"></button>
+      <section class="command-palette-panel" role="dialog" aria-modal="true" aria-label="Command palette">
+        <input
+          id="command-palette-input"
+          class="command-palette-input"
+          type="text"
+          autocomplete="off"
+          placeholder="Type a command or file name..."
+          aria-label="Command palette search"
+        />
+        <div id="command-palette-results" class="command-palette-results"></div>
+      </section>
+    </div>
 
     <script src="./renderer.js" type="module"></script>
   </body>
