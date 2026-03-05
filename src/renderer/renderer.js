@@ -78,6 +78,7 @@ let commandPaletteItems = [];
 let commandPaletteSelectedIndex = 0;
 let commandPaletteOpen = false;
 let commandPaletteRestoredFocus = null;
+let allowWindowUnload = false;
 const ZWSP = '\u200B';
 const BLOCK_SELECTOR = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote';
 const SUN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>';
@@ -1640,9 +1641,12 @@ async function doSave() {
     return;
   }
 
+  currentFilePath = result.filePath;
   currentMarkdown = markdown;
   isDirty = false;
   updateFileMeta();
+  highlightActiveFile(currentFilePath);
+  showAppStatus(`Saved to ${currentFilePath}`, 'success', 3200);
 }
 
 async function doSaveAs() {
@@ -1661,6 +1665,7 @@ async function doSaveAs() {
   isDirty = false;
   updateFileMeta();
   highlightActiveFile(currentFilePath);
+  showAppStatus(`Saved to ${currentFilePath}`, 'success', 3200);
 }
 
 function toggleSidebar() {
@@ -2217,7 +2222,13 @@ if (!fileApi) {
 }
 
 window.addEventListener('beforeunload', (event) => {
-  if (!isDirty) {
+  if (allowWindowUnload || !isDirty) {
+    return;
+  }
+
+  const shouldClose = window.confirm('You have unsaved changes. Quit without saving?');
+  if (shouldClose) {
+    allowWindowUnload = true;
     return;
   }
 
